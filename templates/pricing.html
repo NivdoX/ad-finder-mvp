@@ -1,0 +1,38 @@
+{% extends "layout.html" %}
+{% block title %}Pricing · RunningAds{% endblock %}
+
+{% block content %}
+<div class="simple-grid three-col">
+    <div class="panel">
+        <div class="pill">Free</div>
+        <h2>Preview</h2>
+        <p class="muted">1 free search total, then upgrade.</p>
+        <p class="muted">Best for first-time evaluation.</p>
+    </div>
+
+    <div class="panel">
+        <div class="pill">Basic · $29/mo</div>
+        <h2>Basic</h2>
+        <p>Up to 40 high-quality searches per month</p>
+        <p class="muted">Enough to find winning ads every week</p>
+        <p class="muted">Most users find what they need in under 5 searches</p>
+        <p class="muted">Daily cap: 5 searches</p>
+
+        <form method="post" action="{{ url_for('create_checkout', plan='basic') }}">
+            <button class="form-button" type="submit">Choose Basic</button>
+        </form>
+    </div>
+
+    <div class="panel">
+        <div class="pill">Pro · $59/mo</div>
+        <h2>Pro</h2>
+        <p>Up to 90 high-quality searches per month</p>
+        <p class="muted">For teams and heavier research</p>
+        <p class="muted">Daily cap: 15 searches</p>
+
+        <form method="post" action="{{ url_for('create_checkout', plan='pro') }}">
+            <button class="form-button" type="submit">Choose Pro</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

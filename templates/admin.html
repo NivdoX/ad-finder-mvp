@@ -1,0 +1,114 @@
+{% extends "layout.html" %}
+{% block title %}Admin · RunningAds{% endblock %}
+
+{% block content %}
+<div class="simple-grid three-col">
+    <div class="panel">
+        <div class="pill">Today</div>
+        <h3>{{ stats.day_searches }}</h3>
+        <p class="muted">Searches</p>
+        <p>${{ '%.2f'|format(stats.day_cost) }} cost</p>
+        <p>${{ '%.2f'|format(stats.day_cps) }} cost per search</p>
+        <p>{{ '%.1f'|format(stats.day_cache_rate) }}% cache rate</p>
+    </div>
+
+    <div class="panel">
+        <div class="pill">This month</div>
+        <h3>{{ stats.month_searches }}</h3>
+        <p class="muted">Searches</p>
+        <p>${{ '%.2f'|format(stats.month_cost) }} cost</p>
+        <p>${{ '%.2f'|format(stats.month_cps) }} cost per search</p>
+        <p>{{ '%.1f'|format(stats.month_cache_rate) }}% cache rate</p>
+    </div>
+
+    <div class="panel">
+        <div class="pill">AI monitoring</div>
+        <h3>Summary</h3>
+        <p class="muted">Generate an AI summary of current usage and cost trends.</p>
+        <a class="topbar-btn primary" href="{{ url_for('admin', summary=1) }}">Generate summary</a>
+    </div>
+</div>
+
+<div class="simple-grid two-col">
+    <div class="panel">
+        <h2>Top users</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Searches</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in stats.top_users %}
+                    <tr>
+                        <td>{{ row[0] }}</td>
+                        <td>{{ row[1] }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>AI summary</h2>
+        {% if ai_summary %}
+            <pre style="white-space:pre-wrap; font-family:inherit;">{{ ai_summary }}</pre>
+        {% else %}
+            <p class="muted">No summary generated yet.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="simple-grid two-col">
+    <div class="panel">
+        <h2>Alerts</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>When</th>
+                    <th>Type</th>
+                    <th>Severity</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in alerts %}
+                    <tr>
+                        <td>{{ row[0] }}</td>
+                        <td>{{ row[1] }}</td>
+                        <td>{{ row[2] }}</td>
+                        <td>{{ row[3] }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Feedback</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>When</th>
+                    <th>Email</th>
+                    <th>Query</th>
+                    <th>Type</th>
+                    <th>Text</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in feedback_rows %}
+                    <tr>
+                        <td>{{ row[0] }}</td>
+                        <td>{{ row[1] or 'Anonymous' }}</td>
+                        <td>{{ row[2] or '' }}</td>
+                        <td>{{ row[3] }}</td>
+                        <td>{{ row[4] or '' }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

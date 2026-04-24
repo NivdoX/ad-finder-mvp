@@ -1,0 +1,45 @@
+{% extends "layout.html" %}
+{% block title %}Account · RunningAds{% endblock %}
+
+{% block content %}
+<div class="simple-grid two-col">
+    <div class="panel">
+        <div class="pill">Account</div>
+        <h2>{{ user.email }}</h2>
+        <p class="muted">Plan: {{ user.plan|upper }}</p>
+        <p class="muted">Subscription status: {{ user.subscription_status }}</p>
+
+        {% if user.full_access or user.role == 'admin' %}
+            <p>Admin access is active.</p>
+        {% elif user.is_paid %}
+            <p>Your paid access is active.</p>
+        {% else %}
+            <p>You are currently on the free tier.</p>
+        {% endif %}
+
+        <div class="stack" style="margin-top:16px;">
+            {% if not user.is_paid and not user.full_access %}
+                <a class="topbar-btn primary" href="{{ url_for('pricing') }}">Choose a plan</a>
+            {% endif %}
+
+            {% if user.stripe_customer_id %}
+                <form method="post" action="{{ url_for('billing_portal') }}">
+                    <button class="secondary-button" type="submit">Manage billing</button>
+                </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="pill">Usage</div>
+        <h2>Search usage</h2>
+
+        {% if usage and limits %}
+            <p>Monthly: {{ usage.monthly_count }} / {{ limits.monthly }}</p>
+            <p>Today: {{ usage.daily_count }} / {{ limits.daily }}</p>
+        {% else %}
+            <p class="muted">Usage limits apply after you activate a paid plan.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,354 @@
+{% extends "layout.html" %}
+{% block title %}RunningAds{% endblock %}
+
+{% block head_extra %}
+<style>
+    .button-loader {
+        width: 18px;
+        height: 18px;
+        border: 2px solid rgba(255, 255, 255, 0.35);
+        border-top: 2px solid #ffffff;
+        border-radius: 50%;
+        display: none;
+        animation: spin 0.8s linear infinite;
+        flex-shrink: 0;
+    }
+    #search-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+    }
+    #search-button.is-loading .button-loader {
+        display: inline-block;
+    }
+    .cta-row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 14px;
+    }
+    .cta-link-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 52px;
+        padding: 0 18px;
+        border-radius: 16px;
+        text-decoration: none;
+        font-weight: 900;
+    }
+    .cta-link-btn.primary {
+        background: linear-gradient(90deg, #22d3ee 0%, #38bdf8 42%, #2dd4bf 100%);
+        color: #fff;
+    }
+    .cta-link-btn.secondary {
+        background: rgba(15, 23, 42, 0.65);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        color: #fff;
+    }
+    .report-toggle {
+        margin-top: 16px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="page">
+
+    <section class="hero">
+        <div class="hero-grid">
+
+            <div class="hero-left">
+                <div class="brand-row">
+                    <img
+                        src="{{ url_for('static', filename='logo1.png') }}"
+                        alt="RunningAds logo"
+                        class="hero-logo"
+                    >
+                </div>
+
+                <h1>
+                    Find ads your competitors
+                    <span class="headline-accent">can’t afford to turn off</span>
+                </h1>
+
+                <p class="hero-subtext">
+                    The simplest way to find winning ads. No dashboards, no noise.
+                </p>
+
+                <form method="post" class="search-form" id="search-form" onsubmit="return handleSearchSubmit(event)">
+                    <label for="brand" class="field-label">Brand or competitor</label>
+
+                    <input
+                        id="brand"
+                        name="brand"
+                        type="text"
+                        class="search-input"
+                        placeholder="Search brand or competitor (e.g. Nike)"
+                        value="{{ brand }}"
+                        required
+                    >
+
+                    <button type="submit" class="search-button" id="search-button">
+                        <span class="button-text" id="button-text">Search</span>
+                        <span class="button-loader" id="button-loader" aria-hidden="true"></span>
+                    </button>
+                </form>
+
+                <div class="search-loading-box" id="search-loading-box" style="display:none;">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-text">Searching for proven ads...</div>
+                </div>
+
+                <p class="hero-proof">
+                    We don’t show more data, we show what matters.
+                </p>
+
+                {% if error %}
+                    <div class="error-box">{{ error }}</div>
+                {% endif %}
+
+                {% if blocked and blocked_message %}
+                    <div class="blocked-message" style="display:block; margin-top:22px;">
+                        <div class="paywall-box">
+                            <div class="paywall-badge">Access required</div>
+                            <h3>Unlock more searches</h3>
+                            <p>{{ blocked_message }}</p>
+                            <div class="cta-row">
+                                {% if current_user %}
+                                    <a class="cta-link-btn primary" href="{{ url_for('pricing') }}">Choose a plan</a>
+                                    <a class="cta-link-btn secondary" href="{{ url_for('account') }}">Go to account</a>
+                                {% else %}
+                                    <a class="cta-link-btn primary" href="{{ url_for('register', next='/pricing') }}">Create account</a>
+                                    <a class="cta-link-btn secondary" href="{{ url_for('login', next='/pricing') }}">Log in</a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+
+            <div class="hero-right">
+                <div class="hero-visual-card">
+                    <div class="visual-pill">Running longest</div>
+
+                    <div class="visual-brand">Nike</div>
+
+                    <div class="visual-running">
+                        Running for 41 days
+                    </div>
+
+                    <div class="visual-copy">
+                        Ads running this long are usually profitable.
+                    </div>
+
+                    <div class="visual-bars">
+                        <div class="bar bar-1"></div>
+                        <div class="bar bar-2"></div>
+                        <div class="bar bar-3"></div>
+                    </div>
+
+                    <div class="visual-foot">
+                        Used by performance marketers to find winning ads faster.
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    {% if searched and not error and preview_results %}
+        <section class="results-section">
+            <div class="results-header">
+                <h2>Top running ads</h2>
+
+                {% if current_user and (current_user.is_paid or current_user.full_access) %}
+                    <p>Plan access unlocked</p>
+                {% else %}
+                    <p>Preview results, unlock more searches</p>
+                {% endif %}
+            </div>
+
+            <div class="ads-grid">
+                {% for ad in preview_results %}
+                    <article class="ad-card">
+
+                        <div class="card-top-row">
+                            {% if loop.index == 1 %}
+                                <div class="card-badge badge-winner">RUNNING LONGEST</div>
+                            {% elif loop.index == 2 %}
+                                <div class="card-badge badge-active">Still running, spending money</div>
+                            {% else %}
+                                <div class="card-badge badge-default">Active ad</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="ad-brand">{{ ad.page_name }}</div>
+
+                        <div class="ad-date">Start date: {{ ad.start_date_display }}</div>
+
+                        <div class="ad-running">
+                            <span class="running-text">
+                                Running for {{ ad.days_running }} day{% if ad.days_running != 1 %}s{% endif %}
+                            </span>
+                        </div>
+
+                        <div class="ad-money-line">
+                            Ads running this long are usually profitable.
+                        </div>
+
+                        <div class="ad-sub-line">
+                            Competitors don’t keep losing ads running.
+                        </div>
+
+                        {% if ad.media_url %}
+                            <div class="ad-media-wrap">
+                                <img
+                                    src="{{ ad.media_url }}"
+                                    alt="Ad preview for {{ ad.page_name }}"
+                                    class="ad-media"
+                                >
+                            </div>
+                        {% endif %}
+
+                        {% if ad.ad_text %}
+                            <div class="ad-copy">{{ ad.ad_text }}</div>
+                        {% endif %}
+
+                        <div class="ad-actions">
+                            {% if ad.snapshot_url %}
+                                <a
+                                    href="{{ ad.snapshot_url }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="open-ad-button"
+                                >
+                                    Open ad
+                                </a>
+                            {% endif %}
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+
+            {% if not (current_user and (current_user.is_paid or current_user.full_access)) %}
+                <section class="paywall">
+                    <p class="paywall-text">
+                        Preview results, unlock more searches
+                    </p>
+
+                    <div class="cta-row" style="justify-content:center;">
+                        {% if current_user %}
+                            <a class="cta-link-btn primary" href="{{ url_for('pricing') }}">Choose a plan</a>
+                            <a class="cta-link-btn secondary" href="{{ url_for('account') }}">View account</a>
+                        {% else %}
+                            <a class="cta-link-btn primary" href="{{ url_for('register', next='/pricing') }}">Create account</a>
+                            <a class="cta-link-btn secondary" href="{{ url_for('login', next='/pricing') }}">Log in</a>
+                        {% endif %}
+                    </div>
+
+                    <p class="paywall-sub">
+                        Find winning ads faster. No guesswork.
+                    </p>
+                </section>
+            {% endif %}
+
+            <div class="report-toggle">
+                <details class="panel">
+                    <summary style="cursor:pointer; font-weight:800;">Report issue</summary>
+                    <form method="post" action="{{ url_for('feedback') }}" class="stack" style="margin-top:16px;">
+                        <input type="hidden" name="search_query" value="{{ brand }}">
+                        <select class="form-select" name="feedback_type" required>
+                            <option value="">Choose issue type</option>
+                            <option value="Irrelevant ads">Irrelevant ads</option>
+                            <option value="Not enough results">Not enough results</option>
+                            <option value="Confusing">Confusing</option>
+                            <option value="Other">Other</option>
+                        </select>
+                        <textarea class="form-textarea" name="optional_text" placeholder="Optional details"></textarea>
+                        <button class="form-button" type="submit">Send feedback</button>
+                    </form>
+                </details>
+            </div>
+        </section>
+    {% endif %}
+
+    {% if searched and not error and not preview_results %}
+        <section class="empty-state">
+            <div class="empty-box">
+                <div class="empty-badge">No proven ads</div>
+                <h3>No proven ads found for this brand yet</h3>
+                <p>
+                    We did not find any active ads from this exact brand that have been running long enough to qualify.
+                </p>
+
+                {% if not (current_user and (current_user.is_paid or current_user.full_access)) %}
+                    <section class="paywall paywall-empty">
+                        <p class="paywall-text">
+                            Preview results, unlock more searches
+                        </p>
+
+                        <div class="cta-row" style="justify-content:center;">
+                            {% if current_user %}
+                                <a class="cta-link-btn primary" href="{{ url_for('pricing') }}">Choose a plan</a>
+                                <a class="cta-link-btn secondary" href="{{ url_for('account') }}">View account</a>
+                            {% else %}
+                                <a class="cta-link-btn primary" href="{{ url_for('register', next='/pricing') }}">Create account</a>
+                                <a class="cta-link-btn secondary" href="{{ url_for('login', next='/pricing') }}">Log in</a>
+                            {% endif %}
+                        </div>
+
+                        <p class="paywall-sub">
+                            Find winning ads faster. No guesswork.
+                        </p>
+                    </section>
+                {% endif %}
+            </div>
+        </section>
+    {% endif %}
+
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function setLoadingState(isLoading) {
+        const form = document.getElementById("search-form");
+        const button = document.getElementById("search-button");
+        const buttonText = document.getElementById("button-text");
+        const buttonLoader = document.getElementById("button-loader");
+        const input = document.getElementById("brand");
+        const loadingBox = document.getElementById("search-loading-box");
+
+        if (!form || !button || !buttonText || !buttonLoader || !input || !loadingBox) {
+            return;
+        }
+
+        if (isLoading) {
+            form.classList.add("is-loading");
+            button.classList.add("is-loading");
+            button.disabled = true;
+            input.readOnly = true;
+            buttonText.textContent = "Searching...";
+            buttonLoader.style.display = "inline-block";
+            loadingBox.style.display = "flex";
+        } else {
+            form.classList.remove("is-loading");
+            button.classList.remove("is-loading");
+            button.disabled = false;
+            input.readOnly = false;
+            buttonText.textContent = "Search";
+            buttonLoader.style.display = "none";
+            loadingBox.style.display = "none";
+        }
+    }
+
+    function handleSearchSubmit() {
+        setLoadingState(true);
+        return true;
+    }
+
+    setLoadingState(false);
+</script>
+{% endblock %}
