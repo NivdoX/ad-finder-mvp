@@ -1327,7 +1327,7 @@ def stripe_webhook():
         return jsonify({"error": "Webhook error"}), 400
 
     event_type = event["type"]
-    data = event["data"]["object"]
+    data = event["data"]["object"].to_dict_recursive()
 
     if event_type == "checkout.session.completed":
         email = (data.get("customer_email") or (data.get("customer_details") or {}).get("email") or "").strip().lower()
