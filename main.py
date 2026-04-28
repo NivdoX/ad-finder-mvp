@@ -1327,8 +1327,8 @@ def stripe_webhook():
         return jsonify({"error": "Webhook error"}), 400
 
     raw_event = json.loads(payload.decode("utf-8"))
-event_type = raw_event["type"]
-data = raw_event["data"]["object"]
+    event_type = raw_event["type"]
+    data = raw_event["data"]["object"]
 
     if event_type == "checkout.session.completed":
         email = (data.get("customer_email") or (data.get("customer_details") or {}).get("email") or "").strip().lower()
