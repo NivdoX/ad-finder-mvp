@@ -107,6 +107,7 @@ def ensure_schema():
                         is_cached BOOLEAN DEFAULT FALSE,
                         estimated_cost NUMERIC(10,4) DEFAULT 0,
                         result_count INTEGER DEFAULT 0,
+                        counts_toward_limit BOOLEAN DEFAULT TRUE,
                         created_at TIMESTAMPTZ DEFAULT NOW()
                     );
                     """
@@ -165,66 +166,19 @@ def ensure_schema():
                     """
                 )
 
-                cur.execute(
-                    """
-                    ALTER TABLE users
-                    ADD COLUMN IF NOT EXISTS password_hash TEXT;
-                    """
-                )
-                cur.execute(
-                    """
-                    ALTER TABLE users
-                    ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;
-                    """
-                )
-                cur.execute(
-                    """
-                    ALTER TABLE users
-                    ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;
-                    """
-                )
-                cur.execute(
-                    """
-                    ALTER TABLE users
-                    ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'inactive';
-                    """
-                )
-                cur.execute(
-                    """
-                    ALTER TABLE users
-                    ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT FALSE;
-                    """
-                )
-                cur.execute(
-                    """
-                    ALTER TABLE users
-                    ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free';
-                    """
-                )
-                cur.execute(
-                    """
-                    ALTER TABLE users
-                    ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user';
-                    """
-                )
-                cur.execute(
-                    """
-                    ALTER TABLE users
-                    ADD COLUMN IF NOT EXISTS full_access BOOLEAN DEFAULT FALSE;
-                    """
-                )
-                cur.execute(
-                    """
-                    ALTER TABLE users
-                    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
-                    """
-                )
-                cur.execute(
-                    """
-                    ALTER TABLE users
-                    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-                    """
-                )
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'inactive';")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_paid BOOLEAN DEFAULT FALSE;")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'free';")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'user';")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_access BOOLEAN DEFAULT FALSE;")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
+
+                cur.execute("ALTER TABLE searches ADD COLUMN IF NOT EXISTS anon_id TEXT;")
+                cur.execute("ALTER TABLE searches ADD COLUMN IF NOT EXISTS counts_toward_limit BOOLEAN DEFAULT TRUE;")
 
                 cur.execute(
                     """
@@ -232,21 +186,12 @@ def ensure_schema():
                     ON searches(user_id, created_at);
                     """
                 )
-
-                cur.execute(
-                    """
-                    ALTER TABLE searches
-                    ADD COLUMN IF NOT EXISTS anon_id TEXT;
-                    """
-                )
-
                 cur.execute(
                     """
                     CREATE INDEX IF NOT EXISTS idx_searches_anon_created_at
                     ON searches(anon_id, created_at);
                     """
                 )
-
                 cur.execute(
                     """
                     CREATE INDEX IF NOT EXISTS idx_request_logs_identifier_created_at
@@ -306,7 +251,6 @@ def ensure_anon_id():
 def get_user_by_email(email: str):
     if not email:
         return None
-
     conn = get_db_connection()
     try:
         with conn:
@@ -342,7 +286,6 @@ def get_user_by_email(email: str):
 def get_user_by_id(user_id: int):
     if not user_id:
         return None
-
     conn = get_db_connection()
     try:
         with conn:
@@ -458,7 +401,6 @@ def get_today_range():
 def get_usage_counts_for_user(user_id: int):
     month_start, next_month = get_current_month_range()
     day_start, next_day = get_today_range()
-
     conn = get_db_connection()
     try:
         with conn:
@@ -468,8 +410,9 @@ def get_usage_counts_for_user(user_id: int):
                     SELECT COUNT(*)
                     FROM searches
                     WHERE user_id = %s
-                      AND created_at >= %s
-                      AND created_at < %s
+                    AND counts_toward_limit = TRUE
+                    AND created_at >= %s
+                    AND created_at < %s
                     """,
                     (user_id, month_start, next_month),
                 )
@@ -480,8 +423,9 @@ def get_usage_counts_for_user(user_id: int):
                     SELECT COUNT(*)
                     FROM searches
                     WHERE user_id = %s
-                      AND created_at >= %s
-                      AND created_at < %s
+                    AND counts_toward_limit = TRUE
+                    AND created_at >= %s
+                    AND created_at < %s
                     """,
                     (user_id, day_start, next_day),
                 )
@@ -505,6 +449,7 @@ def get_total_free_searches_for_anon(anon_id: str) -> int:
                     SELECT COUNT(*)
                     FROM searches
                     WHERE anon_id = %s
+                    AND counts_toward_limit = TRUE
                     """,
                     (anon_id,),
                 )
@@ -513,38 +458,56 @@ def get_total_free_searches_for_anon(anon_id: str) -> int:
         conn.close()
 
 
+def get_zero_result_freebies_today(user_id: int) -> int:
+    if not user_id:
+        return 0
+    day_start, next_day = get_today_range()
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM searches
+                    WHERE user_id = %s
+                    AND result_count = 0
+                    AND counts_toward_limit = FALSE
+                    AND created_at >= %s
+                    AND created_at < %s
+                    """,
+                    (user_id, day_start, next_day),
+                )
+                return int(cur.fetchone()[0] or 0)
+    finally:
+        conn.close()
+
+
 def get_usage_message(user):
     if not user:
         return None
-
     if is_admin(user):
         return None
-
     if not user["is_paid"] or user["plan"] not in PLAN_LIMITS:
         return None
 
     counts = get_usage_counts_for_user(user["id"])
     limits = plan_limits(user["plan"])
     monthly_limit = limits["monthly"]
-
     if not monthly_limit:
         return None
 
     pct = (counts["monthly_count"] / monthly_limit) * 100 if monthly_limit else 0
-
     if pct >= 80:
         return "You’ve used 80% of your searches this month"
-
     return None
 
 
 def can_user_search(user):
     if not user:
         return {"allowed": False, "reason": "login"}
-
     if is_admin(user):
         return {"allowed": True, "reason": None}
-
     if not user["is_paid"] or user["plan"] not in PLAN_LIMITS:
         return {"allowed": False, "reason": "upgrade"}
 
@@ -577,6 +540,7 @@ def record_search(
     is_cached,
     estimated_cost,
     result_count,
+    counts_toward_limit=True,
 ):
     conn = get_db_connection()
     try:
@@ -586,9 +550,9 @@ def record_search(
                     """
                     INSERT INTO searches (
                         user_id, anon_id, email, search_query, query_normalized, plan,
-                        is_cached, estimated_cost, result_count
+                        is_cached, estimated_cost, result_count, counts_toward_limit
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         user_id,
@@ -600,6 +564,7 @@ def record_search(
                         is_cached,
                         estimated_cost,
                         result_count,
+                        counts_toward_limit,
                     ),
                 )
     finally:
@@ -616,7 +581,7 @@ def get_cached_results(normalized_query: str):
                     SELECT results_json
                     FROM cached_searches
                     WHERE query_normalized = %s
-                      AND expires_at > NOW()
+                    AND expires_at > NOW()
                     """,
                     (normalized_query,),
                 )
@@ -680,7 +645,6 @@ def create_alert(alert_key: str, alert_type: str, severity: str, message: str):
 def get_monitoring_stats():
     day_start, next_day = get_today_range()
     month_start, next_month = get_current_month_range()
-
     conn = get_db_connection()
     try:
         with conn:
@@ -821,7 +785,7 @@ def check_rate_limit(identifier: str, endpoint: str):
                     SELECT COUNT(*)
                     FROM request_logs
                     WHERE identifier = %s
-                      AND created_at >= NOW() - INTERVAL '1 minute'
+                    AND created_at >= NOW() - INTERVAL '1 minute'
                     """,
                     (identifier,),
                 )
@@ -829,10 +793,8 @@ def check_rate_limit(identifier: str, endpoint: str):
 
                 if count > RATE_LIMIT_PER_MINUTE:
                     time.sleep(1)
-
                 if count > ABUSE_BLOCK_AFTER:
                     return False
-
                 return True
     finally:
         conn.close()
@@ -887,7 +849,6 @@ def get_plan_from_price_id(price_id: str):
 def index():
     ensure_anon_id()
     user = get_current_user()
-
     brand = ""
     error = None
     searched = False
@@ -899,8 +860,8 @@ def index():
 
     if request.method == "POST":
         brand = (request.form.get("brand") or "").strip()
-
         identifier = get_request_identifier(user)
+
         if not check_rate_limit(identifier, "search"):
             error = "Too many requests. Please wait a moment and try again."
             return render_template(
@@ -1004,52 +965,34 @@ def index():
                 anon_id = session["anon_id"]
                 email = None
 
-           shown_count = len(preview_results)
+            shown_count = len(preview_results)
 
-free_zero_used = 0
+            counts_toward_limit = True
+            zero_result_freebie = False
 
-if user_id:
-    conn = get_db_connection()
-    try:
-        with conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT COUNT(*)
-                    FROM searches
-                    WHERE user_id = %s
-                    AND result_count = 0
-                    AND created_at >= NOW() - INTERVAL '1 day'
-                    """,
-                    (user_id,),
-                )
-                free_zero_used = int(cur.fetchone()[0] or 0)
-    finally:
-        conn.close()
+            if user_id and len(ads) == 0:
+                free_zero_used = get_zero_result_freebies_today(user_id)
+                if free_zero_used < 1:
+                    counts_toward_limit = False
+                    zero_result_freebie = True
 
-counted = True
-zero_result_freebie = False
+            record_search(
+                user_id=user_id,
+                anon_id=anon_id,
+                email=email,
+                search_query=brand,
+                plan=plan_name,
+                is_cached=is_cached,
+                estimated_cost=estimated_cost,
+                result_count=len(ads),
+                counts_toward_limit=counts_toward_limit,
+            )
 
-if len(ads) == 0 and free_zero_used < 1:
-    counted = False
-    zero_result_freebie = True
+            if zero_result_freebie:
+                blocked_message = "No ads found. This search was not counted."
 
-record_search(
-    user_id=user_id,
-    anon_id=anon_id,
-    email=email,
-    search_query=brand,
-    plan=plan_name,
-    is_cached=is_cached,
-    estimated_cost=(estimated_cost if counted else 0),
-    result_count=(len(ads) if counted else 0),
-)
-
-if zero_result_freebie:
-    blocked_message = "No ads found. This search was not counted."
-
-evaluate_alerts()
-usage_message = get_usage_message(get_current_user())
+            evaluate_alerts()
+            usage_message = get_usage_message(get_current_user())
 
         except MetaAdsServiceError as exc:
             error = str(exc)
@@ -1080,8 +1023,8 @@ def register():
         password = request.form.get("password") or ""
         confirm_password = request.form.get("confirm_password") or ""
         next_url = request.form.get("next") or url_for("account")
-
         identifier = f"register:{request.remote_addr or 'unknown'}"
+
         if not check_rate_limit(identifier, "register"):
             error = "Too many attempts. Please wait a moment and try again."
         elif not email or not password:
@@ -1117,8 +1060,8 @@ def login():
         email = (request.form.get("email") or "").strip().lower()
         password = request.form.get("password") or ""
         next_url = request.form.get("next") or url_for("account")
-
         identifier = f"login:{request.remote_addr or 'unknown'}"
+
         if not check_rate_limit(identifier, "login"):
             error = "Too many attempts. Please wait a moment and try again."
         else:
@@ -1149,7 +1092,6 @@ def pricing():
 @login_required
 def create_checkout(plan):
     user = get_current_user()
-
     if plan not in ("basic", "pro"):
         return redirect(url_for("pricing"))
 
@@ -1222,8 +1164,8 @@ def account():
 def feedback():
     ensure_anon_id()
     user = get_current_user()
-
     identifier = get_request_identifier(user)
+
     if not check_rate_limit(identifier, "feedback"):
         return redirect(url_for("index"))
 
@@ -1263,7 +1205,6 @@ def feedback():
 @admin_required
 def admin():
     stats = get_monitoring_stats()
-
     conn = get_db_connection()
     try:
         with conn:
@@ -1296,27 +1237,22 @@ def admin():
         if client:
             prompt = f"""
 You are summarizing SaaS monitoring data for the founder.
-
 Daily searches: {stats['day_searches']}
 Daily cost: {stats['day_cost']:.2f}
 Daily cost per search: {stats['day_cps']:.2f}
 Daily cache rate: {stats['day_cache_rate']:.1f}%
-
 Monthly searches: {stats['month_searches']}
 Monthly cost: {stats['month_cost']:.2f}
 Monthly cost per search: {stats['month_cps']:.2f}
 Monthly cache rate: {stats['month_cache_rate']:.1f}%
-
 Top users:
 {stats['top_users']}
-
 Give a short weekly-style summary:
 1. what cost the most
 2. which users seem heaviest
 3. whether cost per search is increasing
 4. one concrete recommendation
 """.strip()
-
             try:
                 response = client.responses.create(
                     model=OPENAI_MODEL,
@@ -1344,11 +1280,12 @@ def stripe_webhook():
         return jsonify({"error": "Missing STRIPE_WEBHOOK_SECRET"}), 500
 
     try:
-        event = stripe.Webhook.construct_event(
+        stripe.Webhook.construct_event(
             payload=payload,
             sig_header=sig_header,
             secret=STRIPE_WEBHOOK_SECRET,
         )
+        raw_event = json.loads(payload.decode("utf-8"))
     except ValueError:
         return jsonify({"error": "Invalid payload"}), 400
     except stripe.error.SignatureVerificationError:
@@ -1357,12 +1294,15 @@ def stripe_webhook():
         print("Webhook error:", str(exc))
         return jsonify({"error": "Webhook error"}), 400
 
-    raw_event = json.loads(payload.decode("utf-8"))
     event_type = raw_event["type"]
     data = raw_event["data"]["object"]
 
     if event_type == "checkout.session.completed":
-        email = (data.get("customer_email") or (data.get("customer_details") or {}).get("email") or "").strip().lower()
+        email = (
+            data.get("customer_email")
+            or (data.get("customer_details") or {}).get("email")
+            or ""
+        ).strip().lower()
         stripe_customer_id = data.get("customer")
         stripe_subscription_id = data.get("subscription")
         plan = (data.get("metadata") or {}).get("plan") or "free"
@@ -1396,9 +1336,9 @@ def stripe_webhook():
         stripe_customer_id = data.get("customer")
         stripe_subscription_id = data.get("id")
         status = data.get("status") or "inactive"
-
         items = data.get("items", {}).get("data", [])
         price_id = None
+
         if items:
             price_id = (((items[0] or {}).get("price")) or {}).get("id")
 
@@ -1436,6 +1376,7 @@ def stripe_webhook():
 
     elif event_type == "invoice.payment_failed":
         stripe_customer_id = data.get("customer")
+
         conn = get_db_connection()
         try:
             with conn:
@@ -1459,7 +1400,7 @@ def stripe_webhook():
 
 ensure_schema()
 
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3000))
     app.run(host="0.0.0.0", port=port)
+
