@@ -1004,21 +1004,52 @@ def index():
                 anon_id = session["anon_id"]
                 email = None
 
-            shown_count = len(preview_results)
+           shown_count = len(preview_results)
 
-            record_search(
-                user_id=user_id,
-                anon_id=anon_id,
-                email=email,
-                search_query=brand,
-                plan=plan_name,
-                is_cached=is_cached,
-                estimated_cost=estimated_cost,
-                result_count=len(ads),
-            )
+free_zero_used = 0
 
-            evaluate_alerts()
-            usage_message = get_usage_message(get_current_user())
+if user_id:
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM searches
+                    WHERE user_id = %s
+                    AND result_count = 0
+                    AND created_at >= NOW() - INTERVAL '1 day'
+                    """,
+                    (user_id,),
+                )
+                free_zero_used = int(cur.fetchone()[0] or 0)
+    finally:
+        conn.close()
+
+counted = True
+zero_result_freebie = False
+
+if len(ads) == 0 and free_zero_used < 1:
+    counted = False
+    zero_result_freebie = True
+
+record_search(
+    user_id=user_id,
+    anon_id=anon_id,
+    email=email,
+    search_query=brand,
+    plan=plan_name,
+    is_cached=is_cached,
+    estimated_cost=(estimated_cost if counted else 0),
+    result_count=(len(ads) if counted else 0),
+)
+
+if zero_result_freebie:
+    blocked_message = "No ads found. This search was not counted."
+
+evaluate_alerts()
+usage_message = get_usage_message(get_current_user())
 
         except MetaAdsServiceError as exc:
             error = str(exc)
