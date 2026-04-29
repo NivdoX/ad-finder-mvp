@@ -109,6 +109,12 @@
                     <div class="error-box">{{ error }}</div>
                 {% endif %}
 
+{% if blocked_message and not blocked %}
+ <div class="error-box" style="margin-top:22px;">
+  {{ blocked_message }}
+ </div>
+{% endif %}
+
                 {% if blocked and blocked_message %}
                     <div class="blocked-message" style="display:block; margin-top:22px;">
                         <div class="paywall-box">
