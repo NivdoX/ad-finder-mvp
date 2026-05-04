@@ -122,13 +122,18 @@
                             <h3>Unlock more searches</h3>
                             <p>{{ blocked_message }}</p>
                             <div class="cta-row">
-                                {% if current_user %}
-                                    <a class="cta-link-btn primary" href="{{ url_for('pricing') }}">Choose a plan</a>
-                                    <a class="cta-link-btn secondary" href="{{ url_for('account') }}">Go to account</a>
-                                {% else %}
-                                    <a class="cta-link-btn primary" href="{{ url_for('register', next='/pricing') }}">Create account</a>
-                                    <a class="cta-link-btn secondary" href="{{ url_for('login', next='/pricing') }}">Log in</a>
-                                {% endif %}
+    {% if current_user %}
+  {% if current_user.is_paid %}
+    <a class="cta-link-btn primary" href="{{ url_for('create_billing_portal') }}">Upgrade to Pro</a>
+  {% else %}
+    <a class="cta-link-btn primary" href="{{ url_for('pricing') }}">Choose a plan</a>
+  {% endif %}
+  <a class="cta-link-btn secondary" href="{{ url_for('account') }}">Go to account</a>
+{% else %}
+  <a class="cta-link-btn primary" href="{{ url_for('register', next='/pricing') }}">Create account</a>
+  <a class="cta-link-btn secondary" href="{{ url_for('login', next='/pricing') }}">Log in</a>
+{% endif %}
+                               
                             </div>
                         </div>
                     </div>
