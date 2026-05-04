@@ -11,6 +11,8 @@ class MetaAdsServiceError(Exception):
 
 
 class MetaAdsService:
+    REQUEST_TIMEOUT_SECONDS = 30
+
     def __init__(self, apify_token: str, apify_actor_id: str):
         self.apify_token = apify_token
         self.apify_actor_id = apify_actor_id
@@ -31,10 +33,10 @@ class MetaAdsService:
 
     def search_ads(self, brand: str, country: str, max_results: int = 50) -> List[Dict[str, Any]]:
         if not self.apify_token:
-            raise MetaAdsServiceError("APIFY_TOKEN is missing in Replit Secrets.")
+            raise MetaAdsServiceError("APIFY_TOKEN is missing.")
 
         if not self.apify_actor_id:
-            raise MetaAdsServiceError("APIFY_ACTOR_ID is missing in Replit Secrets.")
+            raise MetaAdsServiceError("APIFY_ACTOR_ID is missing.")
 
         actor_id = self.apify_actor_id.replace("/", "~")
         url = f"https://api.apify.com/v2/acts/{actor_id}/run-sync-get-dataset-items"
@@ -53,22 +55,37 @@ class MetaAdsService:
         }
 
         try:
-            response = requests.post(url, json=payload, headers=headers, timeout=120)
+            response = requests.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=self.REQUEST_TIMEOUT_SECONDS,
+            )
+        except requests.Timeout as exc:
+            raise MetaAdsServiceError(
+                "Search timed out. Please try again in a moment. This search was not counted."
+            ) from exc
         except requests.RequestException as exc:
-            raise MetaAdsServiceError(f"Could not contact Apify: {exc}") from exc
+            raise MetaAdsServiceError(
+                "Could not complete the search right now. Please try again in a moment. This search was not counted."
+            ) from exc
 
         if response.status_code not in (200, 201):
             raise MetaAdsServiceError(
-                f"Apify returned an error. Status code: {response.status_code}"
+                "Could not complete the search right now. Please try again in a moment. This search was not counted."
             )
 
         try:
             raw_items = response.json()
         except ValueError as exc:
-            raise MetaAdsServiceError("Apify returned invalid JSON.") from exc
+            raise MetaAdsServiceError(
+                "Could not read ad results. Please try again in a moment. This search was not counted."
+            ) from exc
 
         if not isinstance(raw_items, list):
-            raise MetaAdsServiceError("Apify did not return a valid list of ads.")
+            raise MetaAdsServiceError(
+                "Could not read ad results. Please try again in a moment. This search was not counted."
+            )
 
         normalized: List[Dict[str, Any]] = []
         for item in raw_items:
