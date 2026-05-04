@@ -109,11 +109,11 @@
                     <div class="error-box">{{ error }}</div>
                 {% endif %}
 
-{% if blocked_message and not blocked %}
- <div class="error-box" style="margin-top:22px;">
-  {{ blocked_message }}
- </div>
-{% endif %}
+                {% if blocked_message and not blocked %}
+                    <div class="error-box" style="margin-top:22px;">
+                        {{ blocked_message }}
+                    </div>
+                {% endif %}
 
                 {% if blocked and blocked_message %}
                     <div class="blocked-message" style="display:block; margin-top:22px;">
@@ -121,20 +121,29 @@
                             <div class="paywall-badge">Access required</div>
                             <h3>Unlock more searches</h3>
                             <p>{{ blocked_message }}</p>
-                            <div class="cta-row">
-    {% if current_user %}
-  {% if current_user.is_paid %}
-    <a class="cta-link-btn primary" href="{{ url_for('billing_portal') }}">Upgrade to Pro</a>
-  {% else %}
-    <a class="cta-link-btn primary" href="{{ url_for('pricing') }}">Choose a plan</a>
-  {% endif %}
-  <a class="cta-link-btn secondary" href="{{ url_for('account') }}">Go to account</a>
-{% else %}
-  <a class="cta-link-btn primary" href="{{ url_for('register', next='/pricing') }}">Create account</a>
-  <a class="cta-link-btn secondary" href="{{ url_for('login', next='/pricing') }}">Log in</a>
-{% endif %}
-                               
-                            </div>
+
+                            {% if current_user %}
+                                {% if current_user.is_paid and current_user.plan == "basic" %}
+                                    <div class="cta-row">
+                                        <form method="post" action="{{ url_for('billing_portal') }}">
+                                            <button type="submit" class="cta-link-btn primary" style="border:none; cursor:pointer;">
+                                                Upgrade to Pro
+                                            </button>
+                                        </form>
+                                        <a class="cta-link-btn secondary" href="{{ url_for('account') }}">Go to account</a>
+                                    </div>
+                                {% elif not current_user.is_paid %}
+                                    <div class="cta-row">
+                                        <a class="cta-link-btn primary" href="{{ url_for('pricing') }}">Choose a plan</a>
+                                        <a class="cta-link-btn secondary" href="{{ url_for('account') }}">Go to account</a>
+                                    </div>
+                                {% endif %}
+                            {% else %}
+                                <div class="cta-row">
+                                    <a class="cta-link-btn primary" href="{{ url_for('register', next='/pricing') }}">Create account</a>
+                                    <a class="cta-link-btn secondary" href="{{ url_for('login', next='/pricing') }}">Log in</a>
+                                </div>
+                            {% endif %}
                         </div>
                     </div>
                 {% endif %}
