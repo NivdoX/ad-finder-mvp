@@ -124,7 +124,7 @@
                             <div class="cta-row">
     {% if current_user %}
   {% if current_user.is_paid %}
-    <a class="cta-link-btn primary" href="{{ url_for('create_billing_portal') }}">Upgrade to Pro</a>
+    <a class="cta-link-btn primary" href="{{ url_for('billing_portal') }}">Upgrade to Pro</a>
   {% else %}
     <a class="cta-link-btn primary" href="{{ url_for('pricing') }}">Choose a plan</a>
   {% endif %}
