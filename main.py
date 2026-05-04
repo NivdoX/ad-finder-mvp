@@ -1092,10 +1092,19 @@ def pricing():
 @login_required
 def create_checkout(plan):
     user = get_current_user()
+
+    if not user:
+        return redirect(url_for("login"))
+
+    if user["is_paid"]:
+        flash("You already have an active subscription. Manage your subscription from your account.")
+        return redirect(url_for("account"))
+
     if plan not in ("basic", "pro"):
         return redirect(url_for("pricing"))
 
     price_id = STRIPE_BASIC_PRICE_ID if plan == "basic" else STRIPE_PRO_PRICE_ID
+
     if not price_id:
         flash("Missing Stripe price configuration.")
         return redirect(url_for("pricing"))
@@ -1115,6 +1124,7 @@ def create_checkout(plan):
             },
         )
         return redirect(checkout_session.url, code=303)
+
     except Exception as exc:
         flash(f"Checkout error: {str(exc)}")
         return redirect(url_for("pricing"))
