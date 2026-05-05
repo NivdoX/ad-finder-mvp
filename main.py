@@ -521,19 +521,19 @@ def can_user_search(user):
             "message": "You’ve reached your monthly limit. Upgrade to continue finding winning ads.",
         }
 
-  if counts["daily_count"] >= limits["daily"]:
-    if user["plan"] == "pro":
-        message = "You’ve reached today’s Pro limit. Your searches reset tomorrow."
-    elif user["plan"] == "basic":
-        message = "You’ve reached your daily Basic limit. Upgrade to Pro to continue finding winning ads."
-    else:
-        message = "You’ve reached your daily limit."
+    if counts["daily_count"] >= limits["daily"]:
+        if user["plan"] == "pro":
+            message = "You’ve reached today’s Pro limit. Your searches reset tomorrow."
+        elif user["plan"] == "basic":
+            message = "You’ve reached your daily Basic limit. Upgrade to Pro to continue finding winning ads."
+        else:
+            message = "You’ve reached your daily limit."
 
-    return {
-        "allowed": False,
-        "reason": "daily_limit",
-        "message": message,
-    }
+        return {
+            "allowed": False,
+            "reason": "daily_limit",
+            "message": message,
+        }
 
     return {"allowed": True, "reason": None}
 
