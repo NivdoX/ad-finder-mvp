@@ -24,7 +24,7 @@
 
             {% if user.stripe_customer_id %}
                 <form method="post" action="{{ url_for('billing_portal') }}">
-                    <button class="secondary-button" type="submit">Manage billing</button>
+                    <button class="secondary-button" type="submit">Manage subscription</button>
                 </form>
             {% endif %}
         </div>

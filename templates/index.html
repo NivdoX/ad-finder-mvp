@@ -119,7 +119,13 @@
                     <div class="blocked-message" style="display:block; margin-top:22px;">
                         <div class="paywall-box">
                             <div class="paywall-badge">Access required</div>
-                            <h3>Unlock more searches</h3>
+                          <h3>
+{% if current_user and current_user.plan == "pro" %}
+  Daily limit reached
+{% else %}
+  Unlock more searches
+{% endif %}
+</h3>
                             <p>{{ blocked_message }}</p>
 
                             {% if current_user %}
