@@ -213,7 +213,7 @@ class MetaAdsService:
             "days_running": days_running,
         }
 
-    def _could_be_relevant_candidate(self, page_name: str, brand: str) -> bool:
+        def _could_be_relevant_candidate(self, page_name: str, brand: str) -> bool:
         page_norm = self._normalize_text(page_name)
         brand_norm = self._normalize_text(brand)
 
@@ -229,7 +229,7 @@ class MetaAdsService:
         if not brand_tokens:
             return False
 
-       if len(brand_tokens) == 1:
+        if len(brand_tokens) == 1:
             token = brand_tokens[0]
 
             if token == "ridge":
