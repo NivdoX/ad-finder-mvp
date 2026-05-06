@@ -11,7 +11,7 @@ class MetaAdsServiceError(Exception):
 
 
 class MetaAdsService:
-    REQUEST_TIMEOUT_SECONDS = 30
+    REQUEST_TIMEOUT_SECONDS = 90
 
     def __init__(self, apify_token: str, apify_actor_id: str):
         self.apify_token = apify_token
