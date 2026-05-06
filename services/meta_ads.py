@@ -251,11 +251,9 @@ class MetaAdsService:
             " fan page ",
             " fans page ",
             " fan club ",
-            " merch ",
             " replica ",
             " dupes ",
             " dupe ",
-            " dropshipping ",
             " publications ",
         ]
 
