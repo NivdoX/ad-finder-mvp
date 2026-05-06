@@ -256,6 +256,7 @@ class MetaAdsService:
             " dupes ",
             " dupe ",
             " dropshipping ",
+            " publications ",
         ]
 
         for pattern in hard_noise_patterns:
