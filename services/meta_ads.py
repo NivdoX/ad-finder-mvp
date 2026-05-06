@@ -229,8 +229,13 @@ class MetaAdsService:
         if not brand_tokens:
             return False
 
-        if len(brand_tokens) == 1:
-            return brand_tokens[0] in page_tokens
+       if len(brand_tokens) == 1:
+            token = brand_tokens[0]
+
+            if token == "ridge":
+                return page_norm in ("ridge", "the ridge")
+
+            return token in page_tokens
 
         return all(token in page_tokens for token in brand_tokens)
 
