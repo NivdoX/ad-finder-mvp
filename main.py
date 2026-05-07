@@ -1004,7 +1004,8 @@ def index():
         except MetaAdsServiceError as exc:
             error = str(exc)
         except Exception as exc:
-            print("Search error:", str(exc))
+            import traceback
+            traceback.print_exc()
             error = "Something went wrong while searching for ads."
 
     return render_template(
