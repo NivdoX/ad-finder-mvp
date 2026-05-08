@@ -218,13 +218,13 @@ class MetaAdsService:
         }
 
         def _could_be_relevant_candidate(
-        self,
-        page_name: str,
-        brand: str,
-        landing_page: str = "",
-    ) -> bool:
-        page_norm = self._normalize_text(page_name)
-        brand_norm = self._normalize_text(brand)
+            self,
+            page_name: str,
+            brand: str,
+            landing_page: str = "",
+        ) -> bool:
+                    page_norm = self._normalize_text(page_name)
+            brand_norm = self._normalize_text(brand)
 
         if not page_norm or not brand_norm:
             return False
