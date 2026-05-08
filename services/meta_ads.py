@@ -134,7 +134,11 @@ class MetaAdsService:
         if self._is_blocked_page(page_name):
             return None
 
-        if not self._could_be_relevant_candidate(page_name, brand):
+        if not self._could_be_relevant_candidate(
+            page_name,
+            brand,
+            landing_page,
+        ):
             return None
 
         days_running = max(0, (datetime.now(timezone.utc) - start_dt).days)
@@ -213,31 +217,40 @@ class MetaAdsService:
             "days_running": days_running,
         }
 
-    def _could_be_relevant_candidate(self, page_name: str, brand: str) -> bool:
-                page_norm = self._normalize_text(page_name)
-                brand_norm = self._normalize_text(brand)
+        def _could_be_relevant_candidate(
+        self,
+        page_name: str,
+        brand: str,
+        landing_page: str = "",
+    ) -> bool:
+        page_norm = self._normalize_text(page_name)
+        brand_norm = self._normalize_text(brand)
 
-                if not page_norm or not brand_norm:
-                    return False
+        if not page_norm or not brand_norm:
+            return False
 
-                if page_norm == brand_norm:
-                    return True
+        if page_norm == brand_norm:
+            return True
 
-                page_tokens = set(page_norm.split())
-                brand_tokens = [token for token in brand_norm.split() if token]
+        page_tokens = set(page_norm.split())
+        brand_tokens = [token for token in brand_norm.split() if token]
 
-                if not brand_tokens:
-                    return False
+        if not brand_tokens:
+            return False
 
-                if len(brand_tokens) == 1:
-                    token = brand_tokens[0]
+        if len(brand_tokens) == 1:
+            token = brand_tokens[0]
+            landing_raw = (landing_page or "").lower()
 
-                    if token == "ridge":
-                        return page_norm in ("ridge", "the ridge")
+            if token in ("ridge", "gymshark", "manscaped"):
+                return (
+                    page_norm in (token, f"the {token}")
+                    or f"{token}.com" in landing_raw
+                )
 
-                    return token in page_tokens
+            return token in page_tokens
 
-                return all(token in page_tokens for token in brand_tokens)
+        return all(token in page_tokens for token in brand_tokens)
 
     def _is_blocked_page(self, page_name: str) -> bool:
         page_norm = self._normalize_text(page_name)
