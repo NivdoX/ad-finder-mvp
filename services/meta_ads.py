@@ -47,7 +47,7 @@ class MetaAdsService:
         }
 
         payload = {
-            "searchTerms": f'"{brand}"',
+            "searchTerms": brand,
             "country": country,
             "activeStatus": "active",
             "maxResults": max_results,
