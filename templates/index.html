@@ -356,7 +356,8 @@
             button.classList.add("is-loading");
             button.disabled = true;
             input.readOnly = true;
-            buttonText.textContent = "Searching...";
+            buttonText.textContent = "Finding long running ads...";
+            loadingBox.textContent = "Larger searches can take up to 60 seconds.";
             buttonLoader.style.display = "inline-block";
             loadingBox.style.display = "flex";
         } else {
