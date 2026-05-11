@@ -134,6 +134,14 @@ class MetaAdsService:
         if self._is_blocked_page(page_name):
             return None
 
+        landing_page = self._first_non_empty(
+            item.get("link_url"),
+            item.get("linkUrl"),
+            item.get("landing_page"),
+            item.get("landingPage"),
+            item.get("url"),
+        )
+
         if not self._could_be_relevant_candidate(
             page_name,
             brand,
