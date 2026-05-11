@@ -740,3 +740,12 @@ input[type="email"] {
   font-size: 16px;
   margin-top: 10px;
 }
+.text-link {
+    color: #67e8f9;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.text-link:hover {
+    color: #a5f3fc;
+}
