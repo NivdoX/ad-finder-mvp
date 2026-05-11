@@ -250,10 +250,11 @@ class MetaAdsService:
             token = brand_tokens[0]
             landing_raw = (landing_page or "").lower()
 
-            if token in ("ridge", "gymshark", "manscaped"):
+        if token in ("ridge", "gymshark", "manscaped"):
                 return (
                     page_norm in (token, f"the {token}")
-                    or f"{token}.com" in landing_raw
+                    or f"://{token}.com" in landing_raw
+                    or f"://www.{token}.com" in landing_raw
                 )
 
             return token in page_tokens
