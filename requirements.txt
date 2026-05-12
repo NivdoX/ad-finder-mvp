@@ -5,3 +5,4 @@ stripe
 psycopg2-binary
 openai
 gunicorn
+resend
