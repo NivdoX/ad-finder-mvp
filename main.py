@@ -283,6 +283,29 @@ def get_user_by_email(email: str):
     finally:
         conn.close()
 
+def send_reset_email(email: str, reset_link: str):
+    if not RESEND_API_KEY:
+        return
+
+    resend.api_key = RESEND_API_KEY
+
+    resend.Emails.send({
+        "from": "RunningAds <contact@nivdox.com>",
+        "to": [email],
+        "subject": "Reset your RunningAds password",
+        "html": f"""
+        <div style="font-family:Arial,sans-serif;padding:20px;">
+            <h2>Reset your password</h2>
+            <p>Click the button below to reset your password.</p>
+            <p>
+                <a href="{reset_link}" style="background:#22c55e;color:white;padding:12px 20px;text-decoration:none;border-radius:8px;">
+                    Reset password
+                </a>
+            </p>
+            <p>If you did not request this, you can ignore this email.</p>
+        </div>
+        """
+    })
 
 def get_user_by_id(user_id: int):
     if not user_id:
@@ -1059,6 +1082,23 @@ def register():
 
     return render_template("register.html", error=error, next_url=next_url)
 
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    message = None
+
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        user = get_user_by_email(email)
+
+        if user:
+            token = secrets.token_urlsafe(32)
+            reset_link = f"{APP_BASE_URL}/reset-password/{token}"
+
+            send_reset_email(email, reset_link)
+
+        message = "If an account exists for this email, a reset link has been sent."
+
+    return render_template("forgot_password.html", message=message)
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
