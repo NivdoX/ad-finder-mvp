@@ -415,7 +415,10 @@ def set_password_for_existing_user(user_id: int, password: str):
                 cur.execute(
                     """
                     UPDATE users
-                    SET password_hash = %s, updated_at = NOW()
+                    SET password_hash = %s,
+                    reset_token = NULL,
+                    reset_token_expires = NULL,
+                    updated_at = NOW()
                     WHERE id = %s
                     """,
                     (generate_password_hash(password), user_id),
@@ -1145,7 +1148,35 @@ def forgot_password():
         message = "Check your inbox for a password reset link."
 
     return render_template("forgot_password.html", message=message)
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    error = None
+    message = None
 
+    user = get_user_by_reset_token(token)
+
+    if not user:
+        error = "Invalid or expired reset link."
+
+    elif request.method == "POST":
+        password = request.form.get("password") or ""
+        confirm_password = request.form.get("confirm_password") or ""
+
+        if len(password) < 8:
+            error = "Password must be at least 8 characters."
+
+        elif password != confirm_password:
+            error = "Passwords do not match."
+
+        else:
+            set_password_for_existing_user(user["id"], password)
+            return redirect(url_for("login"))
+
+    return render_template(
+        "reset_password.html",
+        error=error,
+        message=message,
+    )
 @app.route("/login", methods=["GET", "POST"])
 def login():
     next_url = request.args.get("next") or url_for("account")
