@@ -89,12 +89,15 @@ def ensure_schema():
                         plan TEXT DEFAULT 'free',
                         role TEXT DEFAULT 'user',
                         full_access BOOLEAN DEFAULT FALSE,
+                        reset_token TEXT,
+                        reset_token_expires TIMESTAMPTZ,
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW()
                     );
                     """
                 )
-
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT")
+                cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMPTZ")
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS searches (
@@ -306,7 +309,50 @@ def send_reset_email(email: str, reset_link: str):
         </div>
         """
     })
+def save_reset_token(user_id: int, token: str):
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE users
+                    SET reset_token = %s,
+                        reset_token_expires = NOW() + INTERVAL '1 hour'
+                    WHERE id = %s
+                    """,
+                    (token, user_id),
+                )
+    finally:
+        conn.close()
 
+
+def get_user_by_reset_token(token: str):
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, email
+                    FROM users
+                    WHERE reset_token = %s
+                    AND reset_token_expires > NOW()
+                    """,
+                    (token,),
+                )
+
+                row = cur.fetchone()
+
+                if not row:
+                    return None
+
+                return {
+                    "id": row[0],
+                    "email": row[1],
+                }
+    finally:
+        conn.close()
 def get_user_by_id(user_id: int):
     if not user_id:
         return None
@@ -1093,10 +1139,10 @@ def forgot_password():
         if user:
             token = secrets.token_urlsafe(32)
             reset_link = f"{APP_BASE_URL}/reset-password/{token}"
-
+            save_reset_token(user["id"], token)
             send_reset_email(email, reset_link)
 
-        message = "If an account exists for this email, a reset link has been sent."
+        message = "Check your inbox for a password reset link."
 
     return render_template("forgot_password.html", message=message)
 
