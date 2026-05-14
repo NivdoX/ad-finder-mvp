@@ -1009,7 +1009,7 @@ def index():
         normalized = normalize_query(brand)
 
         try:
-            cached = None
+            cached = get_cached_results(normalized)
             is_cached = cached is not None
 
             if is_cached:
