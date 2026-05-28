@@ -676,7 +676,7 @@ body {
     }
 
     .hero-right {
-        order: -1;
+        order: 1;
     }
 
     .hero-visual-card {
