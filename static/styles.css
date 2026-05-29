@@ -749,3 +749,41 @@ input[type="email"] {
 .text-link:hover {
     color: #a5f3fc;
 }
+
+.legal-page {
+    max-width: 900px;
+    margin: 40px auto;
+    padding: 32px;
+    background: rgba(8, 15, 35, 0.88);
+    border: 1px solid rgba(96, 165, 250, 0.14);
+    border-radius: 24px;
+    line-height: 1.8;
+    color: #dbeafe;
+}
+
+.legal-page h1,
+.legal-page h2,
+.legal-page h3 {
+    margin-top: 28px;
+    margin-bottom: 12px;
+    color: #ffffff;
+}
+
+.legal-page a {
+    color: #67e8f9;
+}
+
+.legal-page ul {
+    padding-left: 20px;
+}
+
+.legal-page li {
+    margin-bottom: 10px;
+}
+
+@media (max-width: 768px) {
+    .legal-page {
+        padding: 22px;
+        margin: 20px;
+    }
+}
