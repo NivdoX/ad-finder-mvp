@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 
 import psycopg2
 import stripe
+import sentry_sdk
+from sentry_sdk.integrations.flask import FlaskIntegration
 import resend
 from flask import (
     Flask,
@@ -28,6 +30,15 @@ app.secret_key = os.getenv("SECRET_KEY", "").strip()
 
 APP_BASE_URL = os.getenv("APP_BASE_URL", "").strip() or "https://getrunningads.com"
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+
+if SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[FlaskIntegration()],
+        send_default_pii=True,
+    )
 
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY", "").strip()
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()

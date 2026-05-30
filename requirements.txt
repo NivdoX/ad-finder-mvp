@@ -6,3 +6,4 @@ psycopg2-binary
 openai
 gunicorn
 resend
+sentry-sdk[flask]
