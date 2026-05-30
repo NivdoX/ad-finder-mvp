@@ -1001,20 +1001,20 @@ def index():
                     blocked_message=blocked_message,
                 )
         else:
-    blocked = True
-    blocked_message = "Create an account to search competitor ads."
+            blocked = True
+            blocked_message = "Create an account to search competitor ads."
 
-    return render_template(
-        "index.html",
-        brand=brand,
-        error=None,
-        searched=False,
-        blocked=blocked,
-        preview_results=[],
-        shown_count=0,
-        usage_message=None,
-        blocked_message=blocked_message,
-    )
+                return render_template(
+                "index.html",
+                brand=brand,
+                error=None,
+                searched=False,
+                blocked=blocked,
+                preview_results=[],
+                shown_count=0,
+                usage_message=None,
+                blocked_message=blocked_message,
+        )
 
         searched = True
         normalized = normalize_query(brand)
