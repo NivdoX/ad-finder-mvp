@@ -1004,7 +1004,7 @@ def index():
             blocked = True
             blocked_message = "Create an account to search competitor ads."
 
-                return render_template(
+            return render_template(
                 "index.html",
                 brand=brand,
                 error=None,
@@ -1014,7 +1014,7 @@ def index():
                 shown_count=0,
                 usage_message=None,
                 blocked_message=blocked_message,
-        )
+            )
 
         searched = True
         normalized = normalize_query(brand)
