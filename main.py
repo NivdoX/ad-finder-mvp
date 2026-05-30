@@ -1001,21 +1001,20 @@ def index():
                     blocked_message=blocked_message,
                 )
         else:
-            anon_total = get_total_free_searches_for_anon(session["anon_id"])
-            if anon_total >= 1:
-                blocked = True
-                blocked_message = "You’ve already used your free search. Create an account and choose a plan to continue."
-                return render_template(
-                    "index.html",
-                    brand=brand,
-                    error=None,
-                    searched=False,
-                    blocked=blocked,
-                    preview_results=[],
-                    shown_count=0,
-                    usage_message=None,
-                    blocked_message=blocked_message,
-                )
+    blocked = True
+    blocked_message = "Create an account to search competitor ads."
+
+    return render_template(
+        "index.html",
+        brand=brand,
+        error=None,
+        searched=False,
+        blocked=blocked,
+        preview_results=[],
+        shown_count=0,
+        usage_message=None,
+        blocked_message=blocked_message,
+    )
 
         searched = True
         normalized = normalize_query(brand)
