@@ -16,6 +16,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_from_directory,
     session,
     url_for,
 )
@@ -1554,6 +1555,11 @@ def privacy():
 @app.route("/terms")
 def terms():
     return render_template("terms.html")
+
+@app.route("/robots.txt")
+def robots_txt():
+    return send_from_directory(".", "robots.txt")
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3000))
     app.run(host="0.0.0.0", port=port)

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://getrunningads.com/sitemap.xml
