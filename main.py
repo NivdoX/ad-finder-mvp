@@ -1560,6 +1560,55 @@ def terms():
 def robots_txt():
     return send_from_directory(".", "robots.txt")
 
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    pages = [
+        {
+            "loc": "https://getrunningads.com/",
+            "priority": "1.0",
+            "changefreq": "weekly",
+        },
+        {
+            "loc": "https://getrunningads.com/pricing",
+            "priority": "0.8",
+            "changefreq": "weekly",
+        },
+        {
+            "loc": "https://getrunningads.com/login",
+            "priority": "0.4",
+            "changefreq": "monthly",
+        },
+        {
+            "loc": "https://getrunningads.com/register",
+            "priority": "0.7",
+            "changefreq": "monthly",
+        },
+        {
+            "loc": "https://getrunningads.com/privacy",
+            "priority": "0.3",
+            "changefreq": "yearly",
+        },
+        {
+            "loc": "https://getrunningads.com/terms",
+            "priority": "0.3",
+            "changefreq": "yearly",
+        },
+    ]
+
+    xml = ['<?xml version="1.0" encoding="UTF-8"?>']
+    xml.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+
+    for page in pages:
+        xml.append("  <url>")
+        xml.append(f"    <loc>{page['loc']}</loc>")
+        xml.append(f"    <changefreq>{page['changefreq']}</changefreq>")
+        xml.append(f"    <priority>{page['priority']}</priority>")
+        xml.append("  </url>")
+
+    xml.append("</urlset>")
+
+    return "\n".join(xml), 200, {"Content-Type": "application/xml"}
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 3000))
     app.run(host="0.0.0.0", port=port)
