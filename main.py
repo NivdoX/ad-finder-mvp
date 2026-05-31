@@ -3,6 +3,7 @@ import os
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
+from xml.sax.saxutils import escape
 
 import psycopg2
 import stripe
@@ -10,6 +11,7 @@ import sentry_sdk
 from sentry_sdk.integrations.flask import FlaskIntegration
 import resend
 from flask import (
+    abort,
     Flask,
     flash,
     jsonify,
@@ -25,6 +27,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from services.ad_relevance import AdRelevanceFilter
 from services.meta_ads import MetaAdsService, MetaAdsServiceError
+from seo_brands import BRAND_PAGES, get_brand_by_slug, get_related_brands
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "").strip()
@@ -71,6 +74,14 @@ PLAN_LIMITS = {
 
 if STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
+
+
+def absolute_url(path: str = "/") -> str:
+    clean_base = APP_BASE_URL.rstrip("/")
+    clean_path = path if path.startswith("/") else f"/{path}"
+    if clean_path == "/":
+        return f"{clean_base}/"
+    return f"{clean_base}{clean_path}"
 
 
 def utcnow():
@@ -941,7 +952,7 @@ def get_plan_from_price_id(price_id: str):
 def index():
     ensure_anon_id()
     user = get_current_user()
-    brand = ""
+    brand = (request.args.get("brand") or "").strip() if request.method == "GET" else ""
     error = None
     searched = False
     blocked = False
@@ -1555,6 +1566,19 @@ def privacy():
 def terms():
     return render_template("terms.html")
 
+@app.route("/brand/<brand_slug>")
+def brand_page(brand_slug):
+    brand = get_brand_by_slug(brand_slug)
+    if not brand:
+        abort(404)
+
+    return render_template(
+        "brand.html",
+        brand=brand,
+        related_brands=get_related_brands(brand),
+        canonical_url=absolute_url(f"/brand/{brand['slug']}"),
+    )
+
 @app.route("/robots.txt")
 def robots_txt():
     return send_from_directory(".", "robots.txt")
@@ -1563,43 +1587,42 @@ def robots_txt():
 def sitemap_xml():
     pages = [
         {
-            "loc": "https://getrunningads.com/",
+            "loc": absolute_url("/"),
             "priority": "1.0",
             "changefreq": "weekly",
         },
         {
-            "loc": "https://getrunningads.com/pricing",
+            "loc": absolute_url("/pricing"),
             "priority": "0.8",
             "changefreq": "weekly",
         },
         {
-            "loc": "https://getrunningads.com/login",
-            "priority": "0.4",
-            "changefreq": "monthly",
-        },
-        {
-            "loc": "https://getrunningads.com/register",
-            "priority": "0.7",
-            "changefreq": "monthly",
-        },
-        {
-            "loc": "https://getrunningads.com/privacy",
+            "loc": absolute_url("/privacy"),
             "priority": "0.3",
             "changefreq": "yearly",
         },
         {
-            "loc": "https://getrunningads.com/terms",
+            "loc": absolute_url("/terms"),
             "priority": "0.3",
             "changefreq": "yearly",
         },
     ]
+
+    for brand in BRAND_PAGES:
+        pages.append(
+            {
+                "loc": absolute_url(f"/brand/{brand['slug']}"),
+                "priority": "0.7",
+                "changefreq": "weekly",
+            }
+        )
 
     xml = ['<?xml version="1.0" encoding="UTF-8"?>']
     xml.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
 
     for page in pages:
         xml.append("  <url>")
-        xml.append(f"    <loc>{page['loc']}</loc>")
+        xml.append(f"    <loc>{escape(page['loc'])}</loc>")
         xml.append(f"    <changefreq>{page['changefreq']}</changefreq>")
         xml.append(f"    <priority>{page['priority']}</priority>")
         xml.append("  </url>")

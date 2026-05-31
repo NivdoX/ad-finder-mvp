@@ -4,6 +4,23 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}RunningAds{% endblock %}</title>
+    {% block meta_description %}
+    <meta name="description" content="Find long-running competitor ads with RunningAds. Research active ads that may be working now.">
+    {% endblock %}
+    {% block canonical %}
+        {% if canonical_url is defined and canonical_url %}
+            <link rel="canonical" href="{{ canonical_url }}">
+        {% endif %}
+    {% endblock %}
+    {% block open_graph %}
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="RunningAds">
+    <meta property="og:title" content="RunningAds">
+    <meta property="og:description" content="Find long-running competitor ads with RunningAds.">
+        {% if canonical_url is defined and canonical_url %}
+            <meta property="og:url" content="{{ canonical_url }}">
+        {% endif %}
+    {% endblock %}
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

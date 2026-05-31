@@ -1,0 +1,105 @@
+{% extends "layout.html" %}
+
+{% block title %}{{ brand.meta_title }}{% endblock %}
+
+{% block meta_description %}
+<meta name="description" content="{{ brand.meta_description }}">
+{% endblock %}
+
+{% block open_graph %}
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="RunningAds">
+<meta property="og:title" content="{{ brand.meta_title }}">
+<meta property="og:description" content="{{ brand.meta_description }}">
+<meta property="og:url" content="{{ canonical_url }}">
+{% endblock %}
+
+{% block content %}
+<main class="page seo-page">
+    <section class="hero seo-hero">
+        <div class="hero-grid">
+            <div class="hero-left">
+                <div class="pill">{{ brand.category }}</div>
+
+                <h1>{{ brand.headline }}</h1>
+
+                <p class="hero-subtext">
+                    {{ brand.summary }}
+                </p>
+
+                <div class="seo-cta-row">
+                    <a class="topbar-btn primary" href="{{ url_for('index', brand=brand.search_query) }}">
+                        Search {{ brand.name }} ads
+                    </a>
+                    <a class="topbar-btn" href="{{ url_for('pricing') }}">
+                        View pricing
+                    </a>
+                </div>
+            </div>
+
+            <div class="hero-right">
+                <div class="hero-visual-card seo-visual-card">
+                    <div class="visual-pill">Brand research</div>
+                    <div class="visual-brand">{{ brand.name }}</div>
+                    <div class="visual-running">Active ads</div>
+                    <div class="visual-copy">
+                        Find long-running ads and compare what similar brands keep live.
+                    </div>
+                    <div class="visual-bars">
+                        <div class="bar bar-1"></div>
+                        <div class="bar bar-2"></div>
+                        <div class="bar bar-3"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="simple-grid two-col seo-info-grid">
+        <div class="panel">
+            <div class="pill">What to look for</div>
+            <h2>{{ brand.name }} ad research</h2>
+            <p class="muted">
+                RunningAds helps you research {{ brand.focus }}. Look for {{ brand.creative_angle }}
+                when comparing long-running {{ brand.name }} ads with nearby competitors.
+            </p>
+        </div>
+
+        <div class="panel">
+            <div class="pill">Market context</div>
+            <h2>Useful signals</h2>
+            <p class="muted">
+                These ads are most useful for {{ brand.audience }}. Market context:
+                {{ brand.market_context }}.
+            </p>
+        </div>
+    </section>
+
+    <section class="simple-grid two-col seo-info-grid">
+        <div class="panel">
+            <div class="pill">Related brands</div>
+            <h2>Explore similar ad pages</h2>
+            <div class="brand-link-grid">
+                {% for related in related_brands %}
+                    <a class="brand-link" href="{{ url_for('brand_page', brand_slug=related.slug) }}">
+                        {{ related.name }} ads
+                    </a>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="pill">Start search</div>
+            <h2>Find {{ brand.name }} ads</h2>
+            <p class="muted">
+                Open RunningAds with {{ brand.name }} prefilled and start from active ads that are still live.
+            </p>
+            <div class="seo-cta-row">
+                <a class="topbar-btn primary" href="{{ url_for('index', brand=brand.search_query) }}">
+                    Search {{ brand.name }}
+                </a>
+            </div>
+        </div>
+    </section>
+</main>
+{% endblock %}

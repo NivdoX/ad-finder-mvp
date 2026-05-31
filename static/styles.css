@@ -248,6 +248,38 @@ body {
     line-height: 1.5;
 }
 
+.seo-cta-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 24px;
+}
+
+.seo-info-grid {
+    margin-top: 32px;
+}
+
+.brand-link-grid {
+    display: grid;
+    gap: 10px;
+}
+
+.brand-link {
+    display: block;
+    padding: 13px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(15, 23, 42, 0.58);
+    color: #e0f2fe;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.brand-link:hover {
+    border-color: rgba(34, 211, 238, 0.34);
+    color: #ffffff;
+}
+
 .search-form {
     margin-top: 28px;
 }
