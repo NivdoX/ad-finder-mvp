@@ -405,11 +405,11 @@ class MetaAdsService:
         )
 
     def _build_fallback_snapshot_url(self, ad_id: Optional[str]) -> str:
-    if not ad_id:
-        return ""
-    return self._force_english_locale(
-        f"https://www.facebook.com/ads/library/?id={ad_id}"
-    )
+        if not ad_id:
+            return ""
+        return self._force_english_locale(
+            f"https://www.facebook.com/ads/library/?id={ad_id}"
+        )
 
     def _clean_text(self, value: Any) -> str:
         if not value:
