@@ -2,6 +2,7 @@ import re
 import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import requests
 
@@ -191,12 +192,14 @@ class MetaAdsService:
             item.get("adArchiveId"),
         )
 
-        snapshot_url = self._first_non_empty(
+        snapshot_url = self._force_english_locale(
+        self._first_non_empty(
             item.get("ad_snapshot_url"),
             item.get("snapshotUrl"),
             item.get("snapshot_url"),
             self._build_fallback_snapshot_url(ad_id),
-        )
+    )
+)
 
         landing_page = self._first_non_empty(
             item.get("landingPageUrl"),
@@ -389,10 +392,24 @@ class MetaAdsService:
             "",
         ) or ""
 
-    def _build_fallback_snapshot_url(self, ad_id: Optional[str]) -> str:
-        if not ad_id:
+    def _force_english_locale(self, url: str) -> str:
+        if not url:
             return ""
-        return f"https://www.facebook.com/ads/library/?id={ad_id}"
+
+        parsed = urlparse(url)
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        query["locale"] = "en_US"
+
+        return urlunparse(
+            parsed._replace(query=urlencode(query))
+        )
+
+    def _build_fallback_snapshot_url(self, ad_id: Optional[str]) -> str:
+    if not ad_id:
+        return ""
+    return self._force_english_locale(
+        f"https://www.facebook.com/ads/library/?id={ad_id}"
+    )
 
     def _clean_text(self, value: Any) -> str:
         if not value:
