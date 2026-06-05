@@ -27,6 +27,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from services.ad_relevance import AdRelevanceFilter
 from services.meta_ads import MetaAdsService, MetaAdsServiceError
+from opportunity_agent import SUBREDDITS, fetch_opportunities
 from seo_brands import BRAND_PAGES, get_brand_by_slug, get_related_brands
 
 app = Flask(__name__)
@@ -51,6 +52,7 @@ STRIPE_PRO_PRICE_ID = os.getenv("STRIPE_PRO_PRICE_ID", "").strip()
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "").strip() or "gpt-4.1-mini"
+OPPORTUNITY_AGENT_SECRET = os.getenv("OPPORTUNITY_AGENT_SECRET", "").strip()
 
 APIFY_TOKEN = os.getenv("APIFY_TOKEN", "").strip()
 APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID", "").strip()
@@ -1427,6 +1429,45 @@ Give a short weekly-style summary:
         feedback_rows=feedback_rows,
         ai_summary=ai_summary,
     )
+
+
+@app.route("/admin/opportunities")
+@admin_required
+def admin_opportunities():
+    provided_secret = request.args.get("secret", "").strip()
+    access_error = None
+    payload = {
+        "opportunities": [],
+        "errors": [],
+        "subreddits": SUBREDDITS,
+        "selected_subreddit": request.args.get("subreddit", "").strip(),
+        "cached": False,
+        "fetched_at": None,
+        "openai_enabled": bool(OPENAI_API_KEY),
+    }
+
+    if not OPPORTUNITY_AGENT_SECRET:
+        access_error = "Missing OPPORTUNITY_AGENT_SECRET. Set it before using this internal page."
+    elif provided_secret != OPPORTUNITY_AGENT_SECRET:
+        access_error = "Missing or invalid opportunity agent secret."
+    else:
+        payload = fetch_opportunities(
+            selected_subreddit=request.args.get("subreddit", "").strip(),
+            force_refresh=request.args.get("refresh") == "1",
+        )
+
+    return render_template(
+        "admin_opportunities.html",
+        access_error=access_error,
+        secret=provided_secret,
+        opportunities=payload["opportunities"],
+        errors=payload["errors"],
+        subreddits=payload["subreddits"],
+        selected_subreddit=payload["selected_subreddit"],
+        cached=payload["cached"],
+        fetched_at=payload["fetched_at"],
+        openai_enabled=payload["openai_enabled"],
+    ), (403 if access_error else 200)
 
 
 @app.route("/stripe-webhook", methods=["POST"])
