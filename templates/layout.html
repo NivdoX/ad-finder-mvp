@@ -227,7 +227,11 @@
     <div class="topbar">
         <a href="{{ url_for('index') }}">RunningAds</a>
         <div class="topbar-actions">
-            {% if current_user %}
+            {% if seo_public_page is defined and seo_public_page %}
+                <a class="topbar-btn" href="{{ url_for('index', brand=seo_nav_brand) if seo_nav_brand is defined else url_for('index') }}">Search ads</a>
+                <a class="topbar-btn" href="{{ url_for('pricing') }}">View pricing</a>
+                <a class="topbar-btn primary" href="{{ url_for('register') }}">Create account</a>
+            {% elif current_user %}
                 <a class="topbar-btn" href="{{ url_for('account') }}">Account</a>
                 {% if current_user.full_access or current_user.role == 'admin' %}
                     <a class="topbar-btn" href="{{ url_for('admin') }}">Admin</a>

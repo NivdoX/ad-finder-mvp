@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -771,7 +772,49 @@ def save_cached_results(query_original: str, normalized_query: str, results: lis
         conn.close()
 
 
-def get_cached_seo_brand_ads(brand_slug: str):
+UNRESOLVED_TEMPLATE_PATTERN = re.compile(r"\{\{[^{}]*\}\}")
+
+
+def title_from_slug(slug: str) -> str:
+    return " ".join(part for part in (slug or "").replace("-", " ").split()).title()
+
+
+def strip_unresolved_placeholders(value):
+    if value is None:
+        return ""
+    text = str(value)
+    text = UNRESOLVED_TEMPLATE_PATTERN.sub("", text)
+    text = " ".join(text.split()).strip()
+    return text
+
+
+def safe_brand_display_name(brand_slug: str, brand_name: str = "") -> str:
+    clean_name = strip_unresolved_placeholders(brand_name)
+    return (clean_name or title_from_slug(brand_slug) or "Brand").upper()
+
+
+def prepare_seo_ad_preview(ad, fallback_brand_name: str, brand_slug: str):
+    if not isinstance(ad, dict):
+        ad = {}
+
+    fallback_name = safe_brand_display_name(brand_slug, fallback_brand_name)
+    page_name = strip_unresolved_placeholders(
+        ad.get("page_name") or ad.get("advertiser_name") or ad.get("brand_name")
+    )
+    ad_text = strip_unresolved_placeholders(ad.get("ad_text"))
+    headline = strip_unresolved_placeholders(ad.get("headline"))
+    media_url = strip_unresolved_placeholders(ad.get("media_url"))
+    snapshot_url = strip_unresolved_placeholders(ad.get("snapshot_url"))
+
+    prepared = dict(ad)
+    prepared["display_page_name"] = page_name or fallback_name
+    prepared["display_ad_text"] = ad_text or headline
+    prepared["media_url"] = media_url
+    prepared["snapshot_url"] = snapshot_url
+    return prepared
+
+
+def get_cached_seo_brand_ads(brand_slug: str, fallback_brand_name: str = ""):
     conn = None
     try:
         conn = get_db_connection()
@@ -780,7 +823,7 @@ def get_cached_seo_brand_ads(brand_slug: str):
                 cur.execute(
                     """
                     SELECT ads_json, result_count, preview_count, fetched_at, expires_at,
-                           refresh_status, last_error
+                           refresh_status, last_error, brand_name
                     FROM seo_brand_ad_cache
                     WHERE brand_slug = %s
                     """,
@@ -806,7 +849,11 @@ def get_cached_seo_brand_ads(brand_slug: str):
                 if not isinstance(ads, list):
                     ads = []
 
-                preview_ads = ads[:SEO_BRAND_PREVIEW_COUNT]
+                brand_name = row[7] or fallback_brand_name
+                preview_ads = [
+                    prepare_seo_ad_preview(ad, brand_name, brand_slug)
+                    for ad in ads[:SEO_BRAND_PREVIEW_COUNT]
+                ]
                 return {
                     "ads": preview_ads,
                     "result_count": int(row[1] or 0),
@@ -1890,7 +1937,7 @@ def brand_page(brand_slug):
     if not brand:
         abort(404)
 
-    seo_ads_cache = get_cached_seo_brand_ads(brand["slug"])
+    seo_ads_cache = get_cached_seo_brand_ads(brand["slug"], fallback_brand_name=brand["name"])
 
     return render_template(
         "brand.html",
@@ -1898,6 +1945,8 @@ def brand_page(brand_slug):
         related_brands=get_related_brands(brand),
         seo_ads=seo_ads_cache["ads"],
         seo_ads_cache=seo_ads_cache,
+        seo_public_page=True,
+        seo_nav_brand=brand["search_query"],
         canonical_url=absolute_url(f"/brand/{brand['slug']}"),
     )
 

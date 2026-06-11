@@ -305,6 +305,37 @@ body {
     object-fit: cover;
 }
 
+.seo-ad-placeholder {
+    aspect-ratio: 4 / 3;
+    margin-bottom: 16px;
+    border-radius: 22px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background:
+        radial-gradient(circle at top left, rgba(34, 211, 238, 0.10), transparent 28%),
+        linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(5, 10, 23, 0.98));
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 14px;
+    padding: 22px;
+    overflow: hidden;
+}
+
+.seo-ad-placeholder-brand {
+    font-size: clamp(28px, 4vw, 46px);
+    line-height: 0.95;
+    font-weight: 900;
+    color: #ffffff;
+    word-break: break-word;
+}
+
+.seo-ad-placeholder-running {
+    color: var(--green);
+    font-size: clamp(22px, 3vw, 34px);
+    line-height: 1;
+    font-weight: 900;
+}
+
 .seo-ad-brand {
     font-size: clamp(22px, 3vw, 34px);
     letter-spacing: -0.03em;

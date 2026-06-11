@@ -82,14 +82,24 @@
                             <div class="ad-media-wrap seo-ad-media-wrap">
                                 <img
                                     src="{{ ad.media_url }}"
-                                    alt="Ad preview for {{ ad.page_name or brand.name }}"
+                                    alt="Ad preview for {{ ad.display_page_name }}"
                                     class="ad-media seo-ad-media"
                                     loading="lazy"
                                 >
                             </div>
+                        {% else %}
+                            <div class="seo-ad-placeholder">
+                                <div class="visual-pill">Cached ad</div>
+                                <div class="seo-ad-placeholder-brand">{{ ad.display_page_name }}</div>
+                                {% if ad.days_running is defined and ad.days_running is not none %}
+                                    <div class="seo-ad-placeholder-running">
+                                        Running for {{ ad.days_running }} day{% if ad.days_running != 1 %}s{% endif %}
+                                    </div>
+                                {% endif %}
+                            </div>
                         {% endif %}
 
-                        <div class="ad-brand seo-ad-brand">{{ ad.page_name or brand.name }}</div>
+                        <div class="ad-brand seo-ad-brand">{{ ad.display_page_name }}</div>
 
                         {% if ad.days_running is defined and ad.days_running is not none %}
                             <div class="ad-running seo-ad-running">
@@ -103,9 +113,9 @@
                             <div class="ad-date">Started: {{ ad.start_date_display }}</div>
                         {% endif %}
 
-                        {% if ad.ad_text or ad.headline %}
+                        {% if ad.display_ad_text %}
                             <p class="ad-copy seo-ad-copy">
-                                {{ (ad.ad_text or ad.headline)|truncate(180, True) }}
+                                {{ ad.display_ad_text|truncate(180, True) }}
                             </p>
                         {% endif %}
 
