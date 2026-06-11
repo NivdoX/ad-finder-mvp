@@ -55,6 +55,82 @@
         </div>
     </section>
 
+    {% if seo_ads %}
+        <section class="seo-ad-preview-section">
+            <div class="results-header">
+                <div>
+                    <h2>Recent {{ brand.name }} ad previews</h2>
+                    <p>Cached examples from RunningAds brand research.</p>
+                </div>
+                <a class="topbar-btn primary" href="{{ url_for('index', brand=brand.search_query) }}">
+                    Search full results
+                </a>
+            </div>
+
+            <div class="seo-ad-preview-grid">
+                {% for ad in seo_ads[:3] %}
+                    <article class="ad-card seo-ad-card">
+                        <div class="card-top-row">
+                            {% if loop.index == 1 %}
+                                <div class="card-badge badge-winner">Running longest</div>
+                            {% else %}
+                                <div class="card-badge badge-active">Active ad</div>
+                            {% endif %}
+                        </div>
+
+                        {% if ad.media_url %}
+                            <div class="ad-media-wrap seo-ad-media-wrap">
+                                <img
+                                    src="{{ ad.media_url }}"
+                                    alt="Ad preview for {{ ad.page_name or brand.name }}"
+                                    class="ad-media seo-ad-media"
+                                    loading="lazy"
+                                >
+                            </div>
+                        {% endif %}
+
+                        <div class="ad-brand seo-ad-brand">{{ ad.page_name or brand.name }}</div>
+
+                        {% if ad.days_running is defined and ad.days_running is not none %}
+                            <div class="ad-running seo-ad-running">
+                                <span class="running-text seo-running-text">
+                                    Running for {{ ad.days_running }} day{% if ad.days_running != 1 %}s{% endif %}
+                                </span>
+                            </div>
+                        {% endif %}
+
+                        {% if ad.start_date_display %}
+                            <div class="ad-date">Started: {{ ad.start_date_display }}</div>
+                        {% endif %}
+
+                        {% if ad.ad_text or ad.headline %}
+                            <p class="ad-copy seo-ad-copy">
+                                {{ (ad.ad_text or ad.headline)|truncate(180, True) }}
+                            </p>
+                        {% endif %}
+
+                        <div class="ad-actions seo-ad-actions">
+                            {% if ad.snapshot_url %}
+                                <a
+                                    href="{{ ad.snapshot_url }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="open-ad-button"
+                                >
+                                    Open ad
+                                </a>
+                            {% endif %}
+
+                            <a class="open-ad-button seo-secondary-button" href="{{ url_for('index', brand=brand.search_query) }}">
+                                Search full results
+                            </a>
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+        </section>
+    {% endif %}
+
     <section class="simple-grid two-col seo-info-grid">
         <div class="panel">
             <div class="pill">What to look for</div>

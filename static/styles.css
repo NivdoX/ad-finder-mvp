@@ -280,6 +280,63 @@ body {
     color: #ffffff;
 }
 
+.seo-ad-preview-section {
+    margin-top: 32px;
+}
+
+.seo-ad-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.seo-ad-card {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.seo-ad-media-wrap {
+    margin-bottom: 16px;
+}
+
+.seo-ad-media {
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+}
+
+.seo-ad-brand {
+    font-size: clamp(22px, 3vw, 34px);
+    letter-spacing: -0.03em;
+}
+
+.seo-ad-running {
+    margin-top: 12px;
+}
+
+.seo-running-text {
+    font-size: clamp(26px, 4vw, 42px);
+}
+
+.seo-ad-copy {
+    color: var(--muted);
+    font-size: 15px;
+}
+
+.seo-ad-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: auto;
+    padding-top: 16px;
+}
+
+.seo-secondary-button {
+    background: rgba(15, 23, 42, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    box-shadow: none;
+}
+
 .search-form {
     margin-top: 28px;
 }
@@ -713,6 +770,10 @@ body {
 
     .hero-visual-card {
         min-height: 320px;
+    }
+
+    .seo-ad-preview-grid {
+        grid-template-columns: 1fr;
     }
 }
 

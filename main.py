@@ -66,6 +66,9 @@ ABUSE_BLOCK_AFTER = 18
 COST_PER_SEARCH_ALERT_THRESHOLD = 0.08
 CACHE_RATE_ALERT_THRESHOLD = 40.0
 COST_SPIKE_THRESHOLD_PERCENT = 50.0
+SEO_BRAND_CACHE_TTL_HOURS = 72
+SEO_BRAND_PREVIEW_COUNT = 3
+SEO_BRAND_REFRESH_MAX_RESULTS = 12
 
 PLAN_LIMITS = {
     "basic": {"monthly": 40, "daily": 5},
@@ -156,6 +159,27 @@ def ensure_schema():
 
                 cur.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS seo_brand_ad_cache (
+                        id SERIAL PRIMARY KEY,
+                        brand_slug TEXT UNIQUE NOT NULL,
+                        brand_name TEXT NOT NULL,
+                        search_query TEXT NOT NULL,
+                        country TEXT NOT NULL DEFAULT 'NO',
+                        ads_json TEXT NOT NULL DEFAULT '[]',
+                        result_count INTEGER DEFAULT 0,
+                        preview_count INTEGER DEFAULT 0,
+                        fetched_at TIMESTAMPTZ,
+                        expires_at TIMESTAMPTZ,
+                        refresh_status TEXT DEFAULT 'pending',
+                        last_error TEXT,
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """
+                )
+
+                cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS feedback (
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -207,6 +231,19 @@ def ensure_schema():
                 cur.execute("ALTER TABLE searches ADD COLUMN IF NOT EXISTS anon_id TEXT;")
                 cur.execute("ALTER TABLE searches ADD COLUMN IF NOT EXISTS counts_toward_limit BOOLEAN DEFAULT TRUE;")
 
+                cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS brand_name TEXT;")
+                cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS search_query TEXT;")
+                cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS country TEXT DEFAULT 'NO';")
+                cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS ads_json TEXT DEFAULT '[]';")
+                cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS result_count INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS preview_count INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS fetched_at TIMESTAMPTZ;")
+                cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;")
+                cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS refresh_status TEXT DEFAULT 'pending';")
+                cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS last_error TEXT;")
+                cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
+                cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
+
                 cur.execute(
                     """
                     CREATE INDEX IF NOT EXISTS idx_searches_user_created_at
@@ -223,6 +260,12 @@ def ensure_schema():
                     """
                     CREATE INDEX IF NOT EXISTS idx_request_logs_identifier_created_at
                     ON request_logs(identifier, created_at);
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_seo_brand_ad_cache_brand_slug
+                    ON seo_brand_ad_cache(brand_slug);
                     """
                 )
 
@@ -722,6 +765,146 @@ def save_cached_results(query_original: str, normalized_query: str, results: lis
                         json.dumps(results),
                         len(results),
                         expires_at,
+                    ),
+                )
+    finally:
+        conn.close()
+
+
+def get_cached_seo_brand_ads(brand_slug: str):
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT ads_json, result_count, preview_count, fetched_at, expires_at,
+                           refresh_status, last_error
+                    FROM seo_brand_ad_cache
+                    WHERE brand_slug = %s
+                    """,
+                    (brand_slug,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return {
+                        "ads": [],
+                        "result_count": 0,
+                        "preview_count": 0,
+                        "fetched_at": None,
+                        "expires_at": None,
+                        "refresh_status": None,
+                        "last_error": None,
+                    }
+
+                try:
+                    ads = json.loads(row[0] or "[]")
+                except (TypeError, ValueError):
+                    ads = []
+
+                if not isinstance(ads, list):
+                    ads = []
+
+                preview_ads = ads[:SEO_BRAND_PREVIEW_COUNT]
+                return {
+                    "ads": preview_ads,
+                    "result_count": int(row[1] or 0),
+                    "preview_count": int(row[2] or len(preview_ads)),
+                    "fetched_at": row[3],
+                    "expires_at": row[4],
+                    "refresh_status": row[5],
+                    "last_error": row[6],
+                }
+    except Exception as exc:
+        print("SEO brand cache read error:", str(exc))
+        return {
+            "ads": [],
+            "result_count": 0,
+            "preview_count": 0,
+            "fetched_at": None,
+            "expires_at": None,
+            "refresh_status": "error",
+            "last_error": str(exc),
+        }
+    finally:
+        if conn:
+            conn.close()
+
+
+def save_seo_brand_ads_cache(brand, ads: list, country: str = "NO"):
+    preview_count = min(len(ads), SEO_BRAND_PREVIEW_COUNT)
+    fetched_at = utcnow()
+    expires_at = fetched_at + timedelta(hours=SEO_BRAND_CACHE_TTL_HOURS)
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO seo_brand_ad_cache (
+                        brand_slug, brand_name, search_query, country, ads_json,
+                        result_count, preview_count, fetched_at, expires_at,
+                        refresh_status, last_error, updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'success', NULL, NOW())
+                    ON CONFLICT (brand_slug)
+                    DO UPDATE SET
+                        brand_name = EXCLUDED.brand_name,
+                        search_query = EXCLUDED.search_query,
+                        country = EXCLUDED.country,
+                        ads_json = EXCLUDED.ads_json,
+                        result_count = EXCLUDED.result_count,
+                        preview_count = EXCLUDED.preview_count,
+                        fetched_at = EXCLUDED.fetched_at,
+                        expires_at = EXCLUDED.expires_at,
+                        refresh_status = 'success',
+                        last_error = NULL,
+                        updated_at = NOW()
+                    """,
+                    (
+                        brand["slug"],
+                        brand["name"],
+                        brand["search_query"],
+                        country,
+                        json.dumps(ads),
+                        len(ads),
+                        preview_count,
+                        fetched_at,
+                        expires_at,
+                    ),
+                )
+    finally:
+        conn.close()
+
+
+def save_seo_brand_cache_error(brand, error_message: str, country: str = "NO"):
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO seo_brand_ad_cache (
+                        brand_slug, brand_name, search_query, country, ads_json,
+                        result_count, preview_count, refresh_status, last_error, updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, '[]', 0, 0, 'failed', %s, NOW())
+                    ON CONFLICT (brand_slug)
+                    DO UPDATE SET
+                        brand_name = EXCLUDED.brand_name,
+                        search_query = EXCLUDED.search_query,
+                        country = EXCLUDED.country,
+                        refresh_status = 'failed',
+                        last_error = EXCLUDED.last_error,
+                        updated_at = NOW()
+                    """,
+                    (
+                        brand["slug"],
+                        brand["name"],
+                        brand["search_query"],
+                        country,
+                        error_message[:1000],
                     ),
                 )
     finally:
@@ -1429,6 +1612,76 @@ Give a short weekly-style summary:
     )
 
 
+@app.route("/admin/seo-brand-cache/<brand_slug>/refresh", methods=["POST"])
+@admin_required
+def refresh_seo_brand_cache(brand_slug):
+    brand = get_brand_by_slug(brand_slug)
+    if not brand:
+        abort(404)
+
+    country = "NO"
+
+    try:
+        service = get_meta_ads_service()
+        ads = service.search_ads(
+            brand=brand["search_query"],
+            country=country,
+            max_results=SEO_BRAND_REFRESH_MAX_RESULTS,
+        )
+
+        relevance_filter = get_ad_relevance_filter()
+        ads = relevance_filter.filter_ads(
+            search_brand=brand["search_query"],
+            ads=ads,
+        )
+
+        save_seo_brand_ads_cache(brand, ads, country=country)
+
+        return jsonify(
+            {
+                "ok": True,
+                "brand_slug": brand["slug"],
+                "brand_name": brand["name"],
+                "result_count": len(ads),
+                "preview_count": min(len(ads), SEO_BRAND_PREVIEW_COUNT),
+                "expires_in_hours": SEO_BRAND_CACHE_TTL_HOURS,
+            }
+        )
+
+    except MetaAdsServiceError as exc:
+        error_message = str(exc)
+        try:
+            save_seo_brand_cache_error(brand, error_message, country=country)
+        except Exception as save_exc:
+            print("SEO brand cache error save failed:", str(save_exc))
+
+        return jsonify(
+            {
+                "ok": False,
+                "brand_slug": brand["slug"],
+                "brand_name": brand["name"],
+                "error": error_message,
+            }
+        ), 502
+
+    except Exception as exc:
+        error_message = str(exc)
+        print("SEO brand cache refresh error:", error_message)
+        try:
+            save_seo_brand_cache_error(brand, error_message, country=country)
+        except Exception as save_exc:
+            print("SEO brand cache error save failed:", str(save_exc))
+
+        return jsonify(
+            {
+                "ok": False,
+                "brand_slug": brand["slug"],
+                "brand_name": brand["name"],
+                "error": error_message,
+            }
+        ), 500
+
+
 @app.route("/stripe-webhook", methods=["POST"])
 def stripe_webhook():
     payload = request.data
@@ -1572,10 +1825,14 @@ def brand_page(brand_slug):
     if not brand:
         abort(404)
 
+    seo_ads_cache = get_cached_seo_brand_ads(brand["slug"])
+
     return render_template(
         "brand.html",
         brand=brand,
         related_brands=get_related_brands(brand),
+        seo_ads=seo_ads_cache["ads"],
+        seo_ads_cache=seo_ads_cache,
         canonical_url=absolute_url(f"/brand/{brand['slug']}"),
     )
 
