@@ -832,6 +832,50 @@ def get_cached_seo_brand_ads(brand_slug: str):
             conn.close()
 
 
+def get_seo_brand_cache_admin_rows():
+    cache_by_slug = {}
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT brand_slug, refresh_status, result_count, preview_count,
+                           fetched_at, expires_at, last_error
+                    FROM seo_brand_ad_cache
+                    """
+                )
+                for row in cur.fetchall():
+                    cache_by_slug[row[0]] = {
+                        "refresh_status": row[1],
+                        "result_count": row[2],
+                        "preview_count": row[3],
+                        "fetched_at": row[4],
+                        "expires_at": row[5],
+                        "last_error": row[6],
+                    }
+    finally:
+        conn.close()
+
+    rows = []
+    for brand in BRAND_PAGES:
+        cached = cache_by_slug.get(brand["slug"], {})
+        rows.append(
+            {
+                "name": brand["name"],
+                "slug": brand["slug"],
+                "refresh_status": cached.get("refresh_status") or "not refreshed",
+                "result_count": cached.get("result_count"),
+                "preview_count": cached.get("preview_count"),
+                "fetched_at": cached.get("fetched_at"),
+                "expires_at": cached.get("expires_at"),
+                "last_error": cached.get("last_error"),
+            }
+        )
+
+    return rows
+
+
 def save_seo_brand_ads_cache(brand, ads: list, country: str = "NO"):
     preview_count = min(len(ads), SEO_BRAND_PREVIEW_COUNT)
     fetched_at = utcnow()
@@ -1612,6 +1656,15 @@ Give a short weekly-style summary:
     )
 
 
+@app.route("/admin/seo-brand-cache")
+@admin_required
+def seo_brand_cache_admin():
+    return render_template(
+        "seo_brand_cache_admin.html",
+        cache_rows=get_seo_brand_cache_admin_rows(),
+    )
+
+
 @app.route("/admin/seo-brand-cache/<brand_slug>/refresh", methods=["POST"])
 @admin_required
 def refresh_seo_brand_cache(brand_slug):
@@ -1637,6 +1690,10 @@ def refresh_seo_brand_cache(brand_slug):
 
         save_seo_brand_ads_cache(brand, ads, country=country)
 
+        if request.form.get("return_to_admin") == "1":
+            flash(f"{brand['name']} SEO cache refreshed. {len(ads)} ads saved.")
+            return redirect(url_for("seo_brand_cache_admin"))
+
         return jsonify(
             {
                 "ok": True,
@@ -1655,6 +1712,10 @@ def refresh_seo_brand_cache(brand_slug):
         except Exception as save_exc:
             print("SEO brand cache error save failed:", str(save_exc))
 
+        if request.form.get("return_to_admin") == "1":
+            flash(f"{brand['name']} SEO cache refresh failed: {error_message}")
+            return redirect(url_for("seo_brand_cache_admin"))
+
         return jsonify(
             {
                 "ok": False,
@@ -1671,6 +1732,10 @@ def refresh_seo_brand_cache(brand_slug):
             save_seo_brand_cache_error(brand, error_message, country=country)
         except Exception as save_exc:
             print("SEO brand cache error save failed:", str(save_exc))
+
+        if request.form.get("return_to_admin") == "1":
+            flash(f"{brand['name']} SEO cache refresh failed: {error_message}")
+            return redirect(url_for("seo_brand_cache_admin"))
 
         return jsonify(
             {

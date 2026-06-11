@@ -1,0 +1,67 @@
+{% extends "layout.html" %}
+{% block title %}SEO brand cache - RunningAds{% endblock %}
+
+{% block content %}
+<div class="simple-grid">
+    <div class="panel">
+        <div class="pill">SEO cache</div>
+        <h2>Brand ad previews</h2>
+        <p class="muted">
+            Refresh cached ad previews for public brand pages. Public pages only read from this cache.
+        </p>
+        <p>
+            <a class="topbar-btn" href="{{ url_for('admin') }}">Back to admin</a>
+        </p>
+    </div>
+</div>
+
+<div class="simple-grid">
+    <div class="panel">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Slug</th>
+                    <th>Status</th>
+                    <th>Previews</th>
+                    <th>Fetched</th>
+                    <th>Expires</th>
+                    <th>Last error</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in cache_rows %}
+                    <tr>
+                        <td>{{ row.name }}</td>
+                        <td>{{ row.slug }}</td>
+                        <td>{{ row.refresh_status }}</td>
+                        <td>
+                            {% if row.preview_count is not none %}
+                                {{ row.preview_count }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>{{ row.fetched_at or '-' }}</td>
+                        <td>{{ row.expires_at or '-' }}</td>
+                        <td>
+                            {% if row.last_error %}
+                                <span class="danger-note">{{ row.last_error|truncate(120, True) }}</span>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>
+                            <form method="post" action="{{ url_for('refresh_seo_brand_cache', brand_slug=row.slug) }}">
+                                <input type="hidden" name="return_to_admin" value="1">
+                                <button class="secondary-button" type="submit">Refresh</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
