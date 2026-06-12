@@ -1920,6 +1920,102 @@ def update_seo_brand_candidate_quality_result(
         conn.close()
 
 
+def update_seo_brand_candidate_quality_fields(
+    candidate_id: int,
+    quality_score: int,
+    quality_status: str,
+    quality_signals: dict,
+):
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE seo_brand_candidates
+                    SET quality_score = %s,
+                        quality_status = %s,
+                        quality_signals_json = %s,
+                        last_scored_at = NOW(),
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (
+                        quality_score,
+                        quality_status,
+                        json.dumps(quality_signals),
+                        candidate_id,
+                    ),
+                )
+    finally:
+        conn.close()
+
+
+def get_seo_candidate_quality_backfill_rows():
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT c.id, c.brand_name, c.brand_slug, a.ads_json
+                    FROM seo_brand_candidates c
+                    JOIN seo_brand_ad_cache a ON a.brand_slug = c.brand_slug
+                    WHERE COALESCE(c.quality_score, 0) = 0
+                      AND COALESCE(c.preview_count, 0) > 0
+                    ORDER BY c.updated_at DESC, c.brand_name ASC
+                    """
+                )
+                return cur.fetchall()
+    finally:
+        conn.close()
+
+
+def get_backfill_quality_status(preview_count: int):
+    if preview_count <= 0:
+        return "rejected"
+    return "needs_review"
+
+
+def backfill_seo_candidate_quality_scores_from_cache():
+    rows = get_seo_candidate_quality_backfill_rows()
+    result = {
+        "checked": len(rows),
+        "updated": 0,
+        "skipped": 0,
+        "errors": [],
+    }
+
+    for candidate_id, brand_name, brand_slug, ads_json in rows:
+        try:
+            try:
+                ads = json.loads(ads_json or "[]")
+            except (TypeError, ValueError):
+                ads = []
+
+            if not isinstance(ads, list):
+                ads = []
+
+            preview_count = min(len(ads), SEO_BRAND_PREVIEW_COUNT)
+            if preview_count <= 0:
+                result["skipped"] += 1
+                continue
+
+            score, signals = calculate_seo_candidate_quality(brand_name, ads)
+            quality_status = get_backfill_quality_status(preview_count)
+            update_seo_brand_candidate_quality_fields(
+                candidate_id,
+                score,
+                quality_status,
+                signals,
+            )
+            result["updated"] += 1
+        except Exception as exc:
+            result["errors"].append(f"{brand_name or brand_slug}: {str(exc)}")
+
+    return result
+
+
 def promote_seo_brand_candidate(candidate):
     defaults = build_seo_brand_defaults(
         candidate["brand_name"],
@@ -2841,25 +2937,38 @@ def test_seo_brand_candidate(candidate_id):
 
     try:
         ads = fetch_filtered_seo_brand_ads(candidate["brand_name"], country="NO")
+        score, signals = calculate_seo_candidate_quality(candidate["brand_name"], ads)
         preview_count = min(len(ads), SEO_BRAND_PREVIEW_COUNT)
         status = "qualified" if preview_count > 0 else "no_active_ads_found"
-        update_seo_brand_candidate_test_result(
+        quality_status = "needs_review" if preview_count > 0 else "rejected"
+        update_seo_brand_candidate_quality_result(
             candidate_id,
             status=status,
             result_count=len(ads),
             preview_count=preview_count,
+            quality_score=score,
+            quality_status=quality_status,
+            quality_signals=signals,
         )
 
         if preview_count > 0:
-            flash(f"{candidate['brand_name']} qualified with {preview_count} preview ads.")
+            flash(
+                f"{candidate['brand_name']} qualified with {preview_count} preview ads "
+                f"and a quality score of {score}."
+            )
         else:
             flash(f"{candidate['brand_name']} tested: no active ads found.")
 
     except MetaAdsServiceError as exc:
         error_message = str(exc)
-        update_seo_brand_candidate_test_result(
+        update_seo_brand_candidate_quality_result(
             candidate_id,
             status="failed",
+            result_count=0,
+            preview_count=0,
+            quality_score=0,
+            quality_status="failed",
+            quality_signals={"error": error_message},
             error_message=error_message,
         )
         flash(f"{candidate['brand_name']} test failed: {error_message}")
@@ -2867,12 +2976,37 @@ def test_seo_brand_candidate(candidate_id):
     except Exception as exc:
         error_message = str(exc)
         print("SEO brand candidate test error:", error_message)
-        update_seo_brand_candidate_test_result(
+        update_seo_brand_candidate_quality_result(
             candidate_id,
             status="failed",
+            result_count=0,
+            preview_count=0,
+            quality_score=0,
+            quality_status="failed",
+            quality_signals={"error": error_message},
             error_message=error_message,
         )
         flash(f"{candidate['brand_name']} test failed: {error_message}")
+
+    return redirect(url_for("seo_brand_candidates"))
+
+
+@app.route("/admin/seo-brand-candidates/backfill-quality-scores", methods=["POST"])
+@admin_required
+def backfill_seo_candidate_quality_scores():
+    try:
+        result = backfill_seo_candidate_quality_scores_from_cache()
+        message = (
+            f"Quality score backfill complete: {result['updated']} updated, "
+            f"{result['skipped']} skipped, {len(result['errors'])} errors."
+        )
+        if result["errors"]:
+            message += f" Details: {'; '.join(result['errors'][:3])}"
+            if len(result["errors"]) > 3:
+                message += f"; plus {len(result['errors']) - 3} more."
+        flash(message)
+    except Exception as exc:
+        flash(f"Quality score backfill failed: {str(exc)}")
 
     return redirect(url_for("seo_brand_candidates"))
 

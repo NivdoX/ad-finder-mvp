@@ -136,6 +136,9 @@
                 Promote selected to SEO brands
             </button>
         </p>
+        <form method="post" action="{{ url_for('backfill_seo_candidate_quality_scores') }}">
+            <button class="secondary-button" type="submit">Backfill quality scores</button>
+        </form>
         <table class="table">
             <thead>
                 <tr>
