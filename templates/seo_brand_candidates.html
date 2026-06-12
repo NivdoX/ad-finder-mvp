@@ -188,8 +188,15 @@
                             <span class="pill cache-status {{ row.status_key }}">{{ row.status_label }}</span>
                         </td>
                         <td>
-                            <span class="pill cache-status {{ row.quality_status }}">{{ row.quality_status_label }}</span>
+                            {% if row.published_brand_id %}
+                                <span class="pill cache-status qualified">Published</span>
+                            {% else %}
+                                <span class="pill cache-status {{ row.quality_status }}">{{ row.quality_status_label }}</span>
+                            {% endif %}
                             <div>{{ row.quality_score or 0 }}</div>
+                            {% if row.published_brand_id and row.quality_status %}
+                                <div class="muted">Historical: {{ row.quality_status_label }}</div>
+                            {% endif %}
                         </td>
                         <td>{{ row.result_count or 0 }}</td>
                         <td>{{ row.preview_count or 0 }}</td>
@@ -203,7 +210,11 @@
                         </td>
                         <td>
                             {% if row.published_brand_id %}
-                                <span class="pill cache-status qualified">Published</span>
+                                {% if row.auto_published_at %}
+                                    <span class="pill cache-status auto_published">Auto-published</span>
+                                {% else %}
+                                    <span class="pill cache-status qualified">Published manually</span>
+                                {% endif %}
                                 <div>
                                     <a class="brand-link" href="{{ url_for('brand_page', brand_slug=row.brand_slug) }}">
                                         View page
