@@ -1599,6 +1599,15 @@ def save_seo_brand_cache_error(brand, error_message: str, country: str = "NO"):
         conn.close()
 
 
+def refresh_seo_brand_ads_cache(brand, country: str = "NO"):
+    ads = fetch_filtered_seo_brand_ads(brand["search_query"], country=country)
+    save_seo_brand_ads_cache(brand, ads, country=country)
+    return {
+        "result_count": len(ads),
+        "preview_count": min(len(ads), SEO_BRAND_PREVIEW_COUNT),
+    }
+
+
 def create_alert(alert_key: str, alert_type: str, severity: str, message: str):
     conn = get_db_connection()
     try:
@@ -2400,10 +2409,99 @@ def promote_seo_brand_candidate_route(candidate_id):
 
     try:
         promote_seo_brand_candidate(candidate)
-        flash(f"{candidate['brand_name']} promoted to a published SEO brand.")
     except Exception as exc:
         print("SEO brand promotion error:", str(exc))
         flash(f"{candidate['brand_name']} promotion failed: {str(exc)}")
+        return redirect(url_for("seo_brand_candidates"))
+
+    brand = get_brand_by_slug(candidate["brand_slug"]) or build_seo_brand_defaults(
+        candidate["brand_name"],
+        candidate["brand_slug"],
+        category=candidate.get("category") or "",
+    )
+
+    try:
+        refresh_result = refresh_seo_brand_ads_cache(brand, country="NO")
+        preview_count = refresh_result["preview_count"]
+        result_count = refresh_result["result_count"]
+        if preview_count > 0:
+            flash(
+                f"{candidate['brand_name']} promoted successfully. "
+                f"SEO cache refreshed with {preview_count} preview ads."
+            )
+        else:
+            flash(
+                f"{candidate['brand_name']} promoted successfully, "
+                f"but cache refresh found no preview ads from {result_count} results."
+            )
+    except MetaAdsServiceError as exc:
+        error_message = str(exc)
+        try:
+            save_seo_brand_cache_error(brand, error_message, country="NO")
+        except Exception as save_exc:
+            print("SEO brand cache error save failed:", str(save_exc))
+        flash(
+            f"{candidate['brand_name']} promoted successfully, "
+            f"but cache refresh failed: {error_message}"
+        )
+    except Exception as exc:
+        error_message = str(exc)
+        print("SEO brand promote cache refresh error:", error_message)
+        try:
+            save_seo_brand_cache_error(brand, error_message, country="NO")
+        except Exception as save_exc:
+            print("SEO brand cache error save failed:", str(save_exc))
+        flash(
+            f"{candidate['brand_name']} promoted successfully, "
+            f"but cache refresh failed: {error_message}"
+        )
+
+    return redirect(url_for("seo_brand_candidates"))
+
+
+@app.route("/admin/seo-brand-candidates/bulk-promote", methods=["POST"])
+@admin_required
+def bulk_promote_seo_brand_candidates():
+    candidate_ids = []
+    for raw_id in request.form.getlist("candidate_ids"):
+        try:
+            candidate_ids.append(int(raw_id))
+        except (TypeError, ValueError):
+            continue
+
+    if not candidate_ids:
+        flash("Select at least one qualified candidate to promote.")
+        return redirect(url_for("seo_brand_candidates"))
+
+    promoted_count = 0
+    skipped_count = 0
+    errors = []
+
+    for candidate_id in candidate_ids:
+        candidate = get_seo_brand_candidate(candidate_id)
+        if not candidate:
+            skipped_count += 1
+            continue
+
+        if not candidate.get("is_qualified") or candidate.get("published_brand_id"):
+            skipped_count += 1
+            continue
+
+        try:
+            promote_seo_brand_candidate(candidate)
+            promoted_count += 1
+        except Exception as exc:
+            errors.append(f"{candidate['brand_name']}: {str(exc)}")
+
+    message = (
+        f"Bulk promotion complete: {promoted_count} promoted, "
+        f"{skipped_count} skipped, {len(errors)} errors."
+    )
+    if errors:
+        message += f" Details: {'; '.join(errors[:3])}"
+        if len(errors) > 3:
+            message += f"; plus {len(errors) - 3} more."
+    flash(message)
 
     return redirect(url_for("seo_brand_candidates"))
 
@@ -2418,11 +2516,12 @@ def refresh_seo_brand_cache(brand_slug):
     country = "NO"
 
     try:
-        ads = fetch_filtered_seo_brand_ads(brand["search_query"], country=country)
-        save_seo_brand_ads_cache(brand, ads, country=country)
+        refresh_result = refresh_seo_brand_ads_cache(brand, country=country)
+        result_count = refresh_result["result_count"]
+        preview_count = refresh_result["preview_count"]
 
         if request.form.get("return_to_admin") == "1":
-            flash(f"{brand['name']} SEO cache refreshed. {len(ads)} ads saved.")
+            flash(f"{brand['name']} SEO cache refreshed. {result_count} ads saved.")
             return redirect(url_for("seo_brand_cache_admin"))
 
         return jsonify(
@@ -2430,8 +2529,8 @@ def refresh_seo_brand_cache(brand_slug):
                 "ok": True,
                 "brand_slug": brand["slug"],
                 "brand_name": brand["name"],
-                "result_count": len(ads),
-                "preview_count": min(len(ads), SEO_BRAND_PREVIEW_COUNT),
+                "result_count": result_count,
+                "preview_count": preview_count,
                 "expires_in_hours": SEO_BRAND_CACHE_TTL_HOURS,
             }
         )

@@ -74,9 +74,16 @@
 <div class="simple-grid">
     <div class="panel">
         <h2>Tracked candidates</h2>
+        <form id="bulk-promote-form" method="post" action="{{ url_for('bulk_promote_seo_brand_candidates') }}"></form>
+        <p>
+            <button class="secondary-button" type="submit" form="bulk-promote-form">
+                Promote selected to SEO brands
+            </button>
+        </p>
         <table class="table">
             <thead>
                 <tr>
+                    <th>Select</th>
                     <th>Brand</th>
                     <th>Slug</th>
                     <th>Category</th>
@@ -94,6 +101,19 @@
             <tbody>
                 {% for row in candidate_rows %}
                     <tr>
+                        <td>
+                            {% if row.is_qualified and not row.published_brand_id %}
+                                <input
+                                    type="checkbox"
+                                    name="candidate_ids"
+                                    value="{{ row.id }}"
+                                    form="bulk-promote-form"
+                                    aria-label="Select {{ row.brand_name }} for bulk promotion"
+                                >
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
                         <td>{{ row.brand_name }}</td>
                         <td>{{ row.brand_slug }}</td>
                         <td>{{ row.category or '-' }}</td>
@@ -143,7 +163,7 @@
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="12">
+                        <td colspan="13">
                             <span class="muted">No candidates added yet.</span>
                         </td>
                     </tr>
