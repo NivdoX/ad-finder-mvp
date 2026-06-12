@@ -29,6 +29,29 @@
     </div>
 </div>
 
+<div class="simple-grid three-col">
+    <div class="panel">
+        <div class="pill">SEO</div>
+        <h3>Candidate generator</h3>
+        <p class="muted">Add untested seed candidates without running Apify or publishing pages.</p>
+        <a class="topbar-btn" href="{{ url_for('seo_candidate_generator') }}">Open generator</a>
+    </div>
+
+    <div class="panel">
+        <div class="pill">SEO</div>
+        <h3>Candidate tracker</h3>
+        <p class="muted">Review, test, score, and promote SEO brand candidates.</p>
+        <a class="topbar-btn" href="{{ url_for('seo_brand_candidates') }}">Open candidates</a>
+    </div>
+
+    <div class="panel">
+        <div class="pill">SEO</div>
+        <h3>Brand cache</h3>
+        <p class="muted">Refresh cached ad previews for published SEO brand pages.</p>
+        <a class="topbar-btn" href="{{ url_for('seo_brand_cache_admin') }}">Open cache</a>
+    </div>
+</div>
+
 <div class="simple-grid two-col">
     <div class="panel">
         <h2>Top users</h2>

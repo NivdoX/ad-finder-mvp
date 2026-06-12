@@ -1,0 +1,95 @@
+{% extends "layout.html" %}
+{% block title %}SEO candidate generator - RunningAds{% endblock %}
+
+{% block content %}
+<div class="simple-grid">
+    <div class="panel">
+        <div class="pill">SEO generator</div>
+        <h2>Generate brand candidates</h2>
+        <p class="muted">
+            Create untested SEO brand candidates from curated seed lists. Generation only inserts candidate rows.
+        </p>
+        <p class="danger-note">
+            This does not test brands, call Apify, score candidates, publish SEO pages, or refresh cache.
+        </p>
+        <p>
+            <a class="topbar-btn" href="{{ url_for('seo_brand_candidates') }}">Back to candidates</a>
+            <a class="topbar-btn" href="{{ url_for('admin') }}">Back to admin</a>
+        </p>
+    </div>
+</div>
+
+<div class="simple-grid three-col">
+    <div class="panel">
+        <div class="pill">Queue</div>
+        <h3>{{ total_candidates }}</h3>
+        <p class="muted">Total candidates</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Sources</div>
+        <h3>{{ category_rows|length }}</h3>
+        <p class="muted">Seed categories</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Mode</div>
+        <h3>Manual</h3>
+        <p class="muted">Admin-triggered only</p>
+    </div>
+</div>
+
+<div class="simple-grid">
+    <div class="panel">
+        <h2>Select categories</h2>
+        <form method="post" class="stack">
+            <div class="simple-grid three-col">
+                {% for category in category_rows %}
+                    <label>
+                        <input
+                            type="checkbox"
+                            name="categories"
+                            value="{{ category.name }}"
+                            {% if category.name in selected_categories %}checked{% endif %}
+                        >
+                        <strong>{{ category.name }}</strong>
+                        <div class="muted">{{ category.count }} brands</div>
+                        <div class="muted">
+                            {{ category.brands|join(', ') }}
+                        </div>
+                    </label>
+                {% endfor %}
+            </div>
+
+            <p class="muted">
+                Existing candidates are skipped by brand slug. New rows use source_type seed and source_name from the selected category.
+            </p>
+
+            <p>
+                {% for option in generation_options %}
+                    <button class="secondary-button" type="submit" name="generate_count" value="{{ option }}">
+                        Generate {{ option }} candidates
+                    </button>
+                {% endfor %}
+            </p>
+        </form>
+    </div>
+</div>
+
+{% if generation_result %}
+    <div class="simple-grid three-col">
+        <div class="panel">
+            <div class="pill">Added</div>
+            <h3>{{ generation_result.added }}</h3>
+        </div>
+        <div class="panel">
+            <div class="pill">Skipped</div>
+            <h3>{{ generation_result.skipped }}</h3>
+            <p class="muted">Existing or invalid</p>
+        </div>
+        <div class="panel">
+            <div class="pill">Queue</div>
+            <h3>{{ generation_result.total }}</h3>
+            <p class="muted">Total candidates</p>
+        </div>
+    </div>
+{% endif %}
+{% endblock %}

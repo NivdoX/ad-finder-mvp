@@ -33,6 +33,11 @@ from seo_brands import (
     get_brand_by_slug as get_static_brand_by_slug,
     get_related_brands as get_static_related_brands,
 )
+from seo_candidate_seeds import (
+    SEO_CANDIDATE_SEEDS,
+    get_seed_brands_for_categories,
+    get_seed_categories,
+)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "").strip()
@@ -1827,6 +1832,69 @@ def save_seo_brand_candidate(
         conn.close()
 
 
+def count_seo_brand_candidates():
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM seo_brand_candidates")
+                return int(cur.fetchone()[0] or 0)
+    finally:
+        conn.close()
+
+
+def insert_seed_seo_brand_candidates(seed_rows):
+    result = {
+        "added": 0,
+        "skipped": 0,
+        "total": 0,
+    }
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                for seed in seed_rows:
+                    brand_name = (seed.get("brand_name") or "").strip()
+                    category = (seed.get("category") or "").strip()
+                    brand_slug = slugify_brand_name(brand_name)
+                    if not brand_name or not brand_slug:
+                        result["skipped"] += 1
+                        continue
+
+                    cur.execute(
+                        """
+                        INSERT INTO seo_brand_candidates (
+                            brand_name, brand_slug, category, notes,
+                            source_type, source_name, status, quality_status,
+                            created_at, updated_at
+                        )
+                        VALUES (
+                            %s, %s, %s, %s, 'seed', %s,
+                            'not_tested', 'untested', NOW(), NOW()
+                        )
+                        ON CONFLICT (brand_slug) DO NOTHING
+                        RETURNING id
+                        """,
+                        (
+                            brand_name,
+                            brand_slug,
+                            category or None,
+                            "Generated from curated SEO candidate seed list.",
+                            category or "Seed",
+                        ),
+                    )
+                    if cur.fetchone():
+                        result["added"] += 1
+                    else:
+                        result["skipped"] += 1
+
+                cur.execute("SELECT COUNT(*) FROM seo_brand_candidates")
+                result["total"] = int(cur.fetchone()[0] or 0)
+                return result
+    finally:
+        conn.close()
+
+
 def update_seo_brand_candidate_test_result(
     candidate_id: int,
     status: str,
@@ -2925,6 +2993,57 @@ def seo_brand_candidates():
         max_results=automation_settings["max_results_per_test"],
         automation_settings=automation_settings,
         automation_usage=automation_usage,
+    )
+
+
+@app.route("/admin/seo-candidate-generator", methods=["GET", "POST"])
+@admin_required
+def seo_candidate_generator():
+    generation_options = [25, 50, 100]
+    selected_categories = []
+    generation_result = None
+
+    if request.method == "POST":
+        selected_categories = [
+            category
+            for category in request.form.getlist("categories")
+            if category in SEO_CANDIDATE_SEEDS
+        ]
+        try:
+            requested_count = int(request.form.get("generate_count") or 25)
+        except (TypeError, ValueError):
+            requested_count = 25
+
+        if requested_count not in generation_options:
+            requested_count = 25
+
+        if not selected_categories:
+            flash("Select at least one seed category.")
+        else:
+            seed_rows = get_seed_brands_for_categories(selected_categories)[:requested_count]
+            generation_result = insert_seed_seo_brand_candidates(seed_rows)
+            flash(
+                f"Candidate generation complete. Added: {generation_result['added']}. "
+                f"Skipped existing: {generation_result['skipped']}. "
+                f"Total candidates in queue: {generation_result['total']}."
+            )
+
+    category_rows = [
+        {
+            "name": category,
+            "count": len(SEO_CANDIDATE_SEEDS.get(category, [])),
+            "brands": SEO_CANDIDATE_SEEDS.get(category, [])[:8],
+        }
+        for category in get_seed_categories()
+    ]
+
+    return render_template(
+        "seo_candidate_generator.html",
+        category_rows=category_rows,
+        generation_options=generation_options,
+        selected_categories=selected_categories,
+        generation_result=generation_result,
+        total_candidates=count_seo_brand_candidates(),
     )
 
 
