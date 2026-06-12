@@ -224,9 +224,53 @@ def ensure_schema():
                         is_qualified BOOLEAN DEFAULT FALSE,
                         promoted_at TIMESTAMPTZ,
                         published_brand_id INTEGER,
+                        quality_score INTEGER DEFAULT 0,
+                        quality_status TEXT DEFAULT 'untested',
+                        quality_signals_json TEXT,
+                        source_type TEXT,
+                        source_name TEXT,
+                        review_notes TEXT,
+                        rejected_at TIMESTAMPTZ,
+                        auto_published_at TIMESTAMPTZ,
+                        last_scored_at TIMESTAMPTZ,
                         notes TEXT,
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """
+                )
+
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS seo_automation_settings (
+                        id SERIAL PRIMARY KEY,
+                        is_enabled BOOLEAN DEFAULT FALSE,
+                        kill_switch_enabled BOOLEAN DEFAULT TRUE,
+                        daily_test_limit INTEGER DEFAULT 25,
+                        daily_apify_run_limit INTEGER DEFAULT 25,
+                        max_results_per_test INTEGER DEFAULT 12,
+                        auto_publish_threshold INTEGER DEFAULT 70,
+                        review_threshold INTEGER DEFAULT 50,
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """
+                )
+
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS seo_automation_runs (
+                        id SERIAL PRIMARY KEY,
+                        run_type TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        started_at TIMESTAMPTZ DEFAULT NOW(),
+                        finished_at TIMESTAMPTZ,
+                        candidates_tested INTEGER DEFAULT 0,
+                        auto_published INTEGER DEFAULT 0,
+                        sent_to_review INTEGER DEFAULT 0,
+                        rejected INTEGER DEFAULT 0,
+                        failed INTEGER DEFAULT 0,
+                        error TEXT
                     );
                     """
                 )
@@ -327,9 +371,39 @@ def ensure_schema():
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS is_qualified BOOLEAN DEFAULT FALSE;")
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS promoted_at TIMESTAMPTZ;")
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS published_brand_id INTEGER;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS quality_score INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS quality_status TEXT DEFAULT 'untested';")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS quality_signals_json TEXT;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS source_type TEXT;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS source_name TEXT;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS review_notes TEXT;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMPTZ;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS auto_published_at TIMESTAMPTZ;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS last_scored_at TIMESTAMPTZ;")
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS notes TEXT;")
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
+
+                cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN DEFAULT FALSE;")
+                cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS kill_switch_enabled BOOLEAN DEFAULT TRUE;")
+                cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS daily_test_limit INTEGER DEFAULT 25;")
+                cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS daily_apify_run_limit INTEGER DEFAULT 25;")
+                cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS max_results_per_test INTEGER DEFAULT 12;")
+                cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS auto_publish_threshold INTEGER DEFAULT 70;")
+                cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS review_threshold INTEGER DEFAULT 50;")
+                cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
+                cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
+
+                cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS run_type TEXT;")
+                cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS status TEXT;")
+                cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ DEFAULT NOW();")
+                cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS finished_at TIMESTAMPTZ;")
+                cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS candidates_tested INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS auto_published INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS sent_to_review INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS rejected INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS failed INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS error TEXT;")
 
                 cur.execute(
                     """
@@ -371,6 +445,30 @@ def ensure_schema():
                     """
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_seo_brand_candidates_brand_slug
                     ON seo_brand_candidates(brand_slug);
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_seo_brand_candidates_quality_status
+                    ON seo_brand_candidates(quality_status, updated_at);
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_seo_automation_runs_started_at
+                    ON seo_automation_runs(started_at);
+                    """
+                )
+
+                cur.execute(
+                    """
+                    INSERT INTO seo_automation_settings (
+                        id, is_enabled, kill_switch_enabled, daily_test_limit,
+                        daily_apify_run_limit, max_results_per_test,
+                        auto_publish_threshold, review_threshold, updated_at
+                    )
+                    VALUES (1, TRUE, FALSE, 25, 25, 12, 70, 50, NOW())
+                    ON CONFLICT (id) DO NOTHING;
                     """
                 )
 
@@ -1117,12 +1215,12 @@ def slugify_brand_name(value: str) -> str:
     return slug or "candidate"
 
 
-def fetch_filtered_seo_brand_ads(search_query: str, country: str = "NO"):
+def fetch_filtered_seo_brand_ads(search_query: str, country: str = "NO", max_results: int | None = None):
     service = get_meta_ads_service()
     ads = service.search_ads(
         brand=search_query,
         country=country,
-        max_results=SEO_BRAND_REFRESH_MAX_RESULTS,
+        max_results=max_results or SEO_BRAND_REFRESH_MAX_RESULTS,
     )
 
     relevance_filter = get_ad_relevance_filter()
@@ -1130,6 +1228,309 @@ def fetch_filtered_seo_brand_ads(search_query: str, country: str = "NO"):
         search_brand=search_query,
         ads=ads,
     )
+
+
+def get_seo_automation_settings():
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, is_enabled, kill_switch_enabled, daily_test_limit,
+                           daily_apify_run_limit, max_results_per_test,
+                           auto_publish_threshold, review_threshold
+                    FROM seo_automation_settings
+                    WHERE id = 1
+                    """
+                )
+                row = cur.fetchone()
+                if not row:
+                    return {
+                        "id": 1,
+                        "is_enabled": True,
+                        "kill_switch_enabled": False,
+                        "daily_test_limit": 25,
+                        "daily_apify_run_limit": 25,
+                        "max_results_per_test": 12,
+                        "auto_publish_threshold": 70,
+                        "review_threshold": 50,
+                    }
+                return {
+                    "id": row[0],
+                    "is_enabled": bool(row[1]),
+                    "kill_switch_enabled": bool(row[2]),
+                    "daily_test_limit": int(row[3] or 25),
+                    "daily_apify_run_limit": int(row[4] or 25),
+                    "max_results_per_test": int(row[5] or SEO_BRAND_REFRESH_MAX_RESULTS),
+                    "auto_publish_threshold": int(row[6] or 70),
+                    "review_threshold": int(row[7] or 50),
+                }
+    finally:
+        conn.close()
+
+
+def get_seo_automation_daily_usage():
+    day_start, _ = get_today_range()
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        COALESCE(SUM(candidates_tested), 0),
+                        COALESCE(SUM(auto_published), 0),
+                        COALESCE(SUM(sent_to_review), 0),
+                        COALESCE(SUM(rejected), 0),
+                        COALESCE(SUM(failed), 0)
+                    FROM seo_automation_runs
+                    WHERE started_at >= %s
+                    """,
+                    (day_start,),
+                )
+                row = cur.fetchone()
+                tests = int(row[0] or 0)
+                return {
+                    "tests": tests,
+                    "apify_runs": tests,
+                    "auto_published": int(row[1] or 0),
+                    "sent_to_review": int(row[2] or 0),
+                    "rejected": int(row[3] or 0),
+                    "failed": int(row[4] or 0),
+                }
+    finally:
+        conn.close()
+
+
+def create_seo_automation_run(run_type: str = "run_next"):
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO seo_automation_runs (run_type, status, started_at)
+                    VALUES (%s, 'running', NOW())
+                    RETURNING id
+                    """,
+                    (run_type,),
+                )
+                return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+def finish_seo_automation_run(run_id: int, status: str, counts: dict, error: str = ""):
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE seo_automation_runs
+                    SET status = %s,
+                        finished_at = NOW(),
+                        candidates_tested = %s,
+                        auto_published = %s,
+                        sent_to_review = %s,
+                        rejected = %s,
+                        failed = %s,
+                        error = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        status,
+                        counts.get("tested", 0),
+                        counts.get("auto_published", 0),
+                        counts.get("sent_to_review", 0),
+                        counts.get("rejected", 0),
+                        counts.get("failed", 0),
+                        error[:1000] if error else None,
+                        run_id,
+                    ),
+                )
+    finally:
+        conn.close()
+
+
+def get_next_seo_automation_candidates(limit: int):
+    if limit <= 0:
+        return []
+
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, brand_name, brand_slug, category, status,
+                           result_count, preview_count, last_tested_at,
+                           last_success_at, last_error, is_qualified,
+                           promoted_at, published_brand_id, notes,
+                           created_at, updated_at, quality_score,
+                           quality_status, quality_signals_json,
+                           source_type, source_name, review_notes,
+                           rejected_at, auto_published_at, last_scored_at
+                    FROM seo_brand_candidates
+                    WHERE published_brand_id IS NULL
+                    AND COALESCE(quality_status, 'untested') IN ('untested', 'failed')
+                    ORDER BY updated_at ASC, id ASC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                return [seo_brand_candidate_row_to_dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def get_ad_days_running(ad):
+    try:
+        days = ad.get("days_running")
+        if days is None:
+            return None
+        return int(days)
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def calculate_brand_match_score(brand_name: str, ads: list):
+    normalized_brand = normalize_query(brand_name)
+    brand_tokens = [token for token in normalized_brand.split() if token]
+    if not normalized_brand or not ads:
+        return 0, "weak"
+
+    best = 0
+    for ad in ads:
+        if not isinstance(ad, dict):
+            continue
+        identity_text = normalize_query(
+            " ".join(
+                [
+                    str(ad.get("page_name") or ""),
+                    str(ad.get("advertiser_name") or ""),
+                    str(ad.get("brand_name") or ""),
+                ]
+            )
+        )
+        broader_text = normalize_query(
+            " ".join(
+                [
+                    identity_text,
+                    str(ad.get("headline") or ""),
+                    str(ad.get("ad_text") or ""),
+                ]
+            )
+        )
+        if normalized_brand and normalized_brand in identity_text:
+            best = max(best, 20)
+        elif brand_tokens and all(token in identity_text for token in brand_tokens):
+            best = max(best, 16)
+        elif normalized_brand and normalized_brand in broader_text:
+            best = max(best, 12)
+        elif brand_tokens and any(token in broader_text for token in brand_tokens):
+            best = max(best, 8)
+
+    if best >= 20:
+        label = "strong"
+    elif best >= 12:
+        label = "likely"
+    else:
+        label = "weak"
+    return best, label
+
+
+def calculate_seo_candidate_quality(brand_name: str, ads: list):
+    ads = ads if isinstance(ads, list) else []
+    preview_ads = ads[:SEO_BRAND_PREVIEW_COUNT]
+    preview_count = len(preview_ads)
+    result_count = len(ads)
+
+    if preview_count == 0:
+        preview_points = 0
+    elif preview_count == 1:
+        preview_points = 15
+    elif preview_count == 2:
+        preview_points = 24
+    else:
+        preview_points = 30
+
+    if result_count == 0:
+        result_points = 0
+    elif result_count <= 2:
+        result_points = 5
+    elif result_count <= 5:
+        result_points = 10
+    else:
+        result_points = 15
+
+    image_count = sum(1 for ad in preview_ads if strip_unresolved_placeholders(ad.get("media_url") if isinstance(ad, dict) else ""))
+    if image_count == 0:
+        image_points = 0
+        image_label = "none"
+    elif image_count >= max(1, preview_count - 1):
+        image_points = 15
+        image_label = "most"
+    else:
+        image_points = 8
+        image_label = "some"
+
+    text_count = 0
+    for ad in preview_ads:
+        if not isinstance(ad, dict):
+            continue
+        text = strip_unresolved_placeholders(ad.get("ad_text") or ad.get("headline"))
+        if len(text) >= 20:
+            text_count += 1
+    if text_count == 0:
+        text_points = 0
+        text_label = "none"
+    elif text_count >= max(1, preview_count - 1):
+        text_points = 10
+        text_label = "most"
+    else:
+        text_points = 5
+        text_label = "some"
+
+    brand_match_points, brand_match_label = calculate_brand_match_score(brand_name, preview_ads)
+
+    max_days_running = 0
+    for ad in preview_ads:
+        days = get_ad_days_running(ad) if isinstance(ad, dict) else None
+        if days is not None:
+            max_days_running = max(max_days_running, days)
+
+    if max_days_running >= 60:
+        days_points = 10
+    elif max_days_running >= 30:
+        days_points = 8
+    elif max_days_running >= 7:
+        days_points = 5
+    else:
+        days_points = 0
+
+    score = preview_points + result_points + image_points + text_points + brand_match_points + days_points
+    signals = {
+        "preview_count": preview_count,
+        "result_count": result_count,
+        "image_count": image_count,
+        "image_availability": image_label,
+        "ad_text_count": text_count,
+        "ad_text_availability": text_label,
+        "brand_match": brand_match_label,
+        "brand_match_points": brand_match_points,
+        "max_days_running": max_days_running or None,
+        "points": {
+            "preview_count": preview_points,
+            "result_count": result_points,
+            "image_availability": image_points,
+            "ad_text_availability": text_points,
+            "brand_match": brand_match_points,
+            "days_running": days_points,
+        },
+    }
+    return min(score, 100), signals
 
 
 def build_seo_brand_defaults(brand_name: str, brand_slug: str, category: str = ""):
@@ -1285,6 +1686,52 @@ def get_candidate_status_label(status: str):
     return labels.get(status or "not_tested", "Not tested")
 
 
+def get_quality_status_label(status: str):
+    labels = {
+        "untested": "Untested",
+        "auto_published": "Auto-published",
+        "needs_review": "Needs review",
+        "rejected": "Rejected",
+        "failed": "Failed",
+    }
+    return labels.get(status or "untested", "Untested")
+
+
+def seo_brand_candidate_row_to_dict(row):
+    status = row[4] or "not_tested"
+    quality_status = row[17] or "untested"
+    return {
+        "id": row[0],
+        "brand_name": row[1],
+        "brand_slug": row[2],
+        "category": row[3],
+        "status": status,
+        "status_label": get_candidate_status_label(status),
+        "status_key": status,
+        "result_count": row[5],
+        "preview_count": row[6],
+        "last_tested_at": row[7],
+        "last_success_at": row[8],
+        "last_error": row[9],
+        "is_qualified": row[10],
+        "promoted_at": row[11],
+        "published_brand_id": row[12],
+        "notes": row[13],
+        "created_at": row[14],
+        "updated_at": row[15],
+        "quality_score": int(row[16] or 0),
+        "quality_status": quality_status,
+        "quality_status_label": get_quality_status_label(quality_status),
+        "quality_signals_json": row[18],
+        "source_type": row[19],
+        "source_name": row[20],
+        "review_notes": row[21],
+        "rejected_at": row[22],
+        "auto_published_at": row[23],
+        "last_scored_at": row[24],
+    }
+
+
 def get_seo_brand_candidate_rows():
     conn = get_db_connection()
     try:
@@ -1296,37 +1743,15 @@ def get_seo_brand_candidate_rows():
                            result_count, preview_count, last_tested_at,
                            last_success_at, last_error, is_qualified,
                            promoted_at, published_brand_id, notes,
-                           created_at, updated_at
+                           created_at, updated_at, quality_score,
+                           quality_status, quality_signals_json,
+                           source_type, source_name, review_notes,
+                           rejected_at, auto_published_at, last_scored_at
                     FROM seo_brand_candidates
                     ORDER BY is_qualified DESC, updated_at DESC, brand_name ASC
                     """
                 )
-                rows = []
-                for row in cur.fetchall():
-                    status = row[4] or "not_tested"
-                    rows.append(
-                        {
-                            "id": row[0],
-                            "brand_name": row[1],
-                            "brand_slug": row[2],
-                            "category": row[3],
-                            "status": status,
-                            "status_label": get_candidate_status_label(status),
-                            "status_key": status,
-                            "result_count": row[5],
-                            "preview_count": row[6],
-                            "last_tested_at": row[7],
-                            "last_success_at": row[8],
-                            "last_error": row[9],
-                            "is_qualified": row[10],
-                            "promoted_at": row[11],
-                            "published_brand_id": row[12],
-                            "notes": row[13],
-                            "created_at": row[14],
-                            "updated_at": row[15],
-                        }
-                    )
-                return rows
+                return [seo_brand_candidate_row_to_dict(row) for row in cur.fetchall()]
     finally:
         conn.close()
 
@@ -1342,7 +1767,10 @@ def get_seo_brand_candidate(candidate_id: int):
                            result_count, preview_count, last_tested_at,
                            last_success_at, last_error, is_qualified,
                            promoted_at, published_brand_id, notes,
-                           created_at, updated_at
+                           created_at, updated_at, quality_score,
+                           quality_status, quality_signals_json,
+                           source_type, source_name, review_notes,
+                           rejected_at, auto_published_at, last_scored_at
                     FROM seo_brand_candidates
                     WHERE id = %s
                     """,
@@ -1351,32 +1779,18 @@ def get_seo_brand_candidate(candidate_id: int):
                 row = cur.fetchone()
                 if not row:
                     return None
-                status = row[4] or "not_tested"
-                return {
-                    "id": row[0],
-                    "brand_name": row[1],
-                    "brand_slug": row[2],
-                    "category": row[3],
-                    "status": status,
-                    "status_label": get_candidate_status_label(status),
-                    "status_key": status,
-                    "result_count": row[5],
-                    "preview_count": row[6],
-                    "last_tested_at": row[7],
-                    "last_success_at": row[8],
-                    "last_error": row[9],
-                    "is_qualified": row[10],
-                    "promoted_at": row[11],
-                    "published_brand_id": row[12],
-                    "notes": row[13],
-                    "created_at": row[14],
-                    "updated_at": row[15],
-                }
+                return seo_brand_candidate_row_to_dict(row)
     finally:
         conn.close()
 
 
-def save_seo_brand_candidate(brand_name: str, category: str = "", notes: str = ""):
+def save_seo_brand_candidate(
+    brand_name: str,
+    category: str = "",
+    notes: str = "",
+    source_type: str = "",
+    source_name: str = "",
+):
     brand_slug = slugify_brand_name(brand_name)
     conn = get_db_connection()
     try:
@@ -1385,14 +1799,17 @@ def save_seo_brand_candidate(brand_name: str, category: str = "", notes: str = "
                 cur.execute(
                     """
                     INSERT INTO seo_brand_candidates (
-                        brand_name, brand_slug, category, notes, status, updated_at
+                        brand_name, brand_slug, category, notes, source_type,
+                        source_name, status, quality_status, updated_at
                     )
-                    VALUES (%s, %s, %s, %s, 'not_tested', NOW())
+                    VALUES (%s, %s, %s, %s, %s, %s, 'not_tested', 'untested', NOW())
                     ON CONFLICT (brand_slug)
                     DO UPDATE SET
                         brand_name = EXCLUDED.brand_name,
                         category = EXCLUDED.category,
                         notes = EXCLUDED.notes,
+                        source_type = EXCLUDED.source_type,
+                        source_name = EXCLUDED.source_name,
                         updated_at = NOW()
                     RETURNING id
                     """,
@@ -1401,6 +1818,8 @@ def save_seo_brand_candidate(brand_name: str, category: str = "", notes: str = "
                         brand_slug,
                         category or None,
                         notes or None,
+                        source_type or None,
+                        source_name or None,
                     ),
                 )
                 return cur.fetchone()[0]
@@ -1440,6 +1859,60 @@ def update_seo_brand_candidate_test_result(
                         preview_count,
                         (error_message[:1000] if error_message else None),
                         is_qualified,
+                        candidate_id,
+                    ),
+                )
+    finally:
+        conn.close()
+
+
+def update_seo_brand_candidate_quality_result(
+    candidate_id: int,
+    status: str,
+    result_count: int,
+    preview_count: int,
+    quality_score: int,
+    quality_status: str,
+    quality_signals: dict,
+    error_message: str = "",
+    auto_published: bool = False,
+):
+    is_qualified = preview_count > 0 and quality_status in ("auto_published", "needs_review")
+    last_success_at_sql = "NOW()" if is_qualified else "last_success_at"
+    rejected_at_sql = "NOW()" if quality_status == "rejected" else "rejected_at"
+    auto_published_at_sql = "NOW()" if auto_published else "auto_published_at"
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE seo_brand_candidates
+                    SET status = %s,
+                        result_count = %s,
+                        preview_count = %s,
+                        last_tested_at = NOW(),
+                        last_success_at = {last_success_at_sql},
+                        last_error = %s,
+                        is_qualified = %s,
+                        quality_score = %s,
+                        quality_status = %s,
+                        quality_signals_json = %s,
+                        last_scored_at = NOW(),
+                        rejected_at = {rejected_at_sql},
+                        auto_published_at = {auto_published_at_sql},
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (
+                        status,
+                        result_count,
+                        preview_count,
+                        (error_message[:1000] if error_message else None),
+                        is_qualified,
+                        quality_score,
+                        quality_status,
+                        json.dumps(quality_signals),
                         candidate_id,
                     ),
                 )
@@ -2327,23 +2800,35 @@ def seo_brand_candidates():
         brand_name = (request.form.get("brand_name") or "").strip()
         category = (request.form.get("category") or "").strip()
         notes = (request.form.get("notes") or "").strip()
+        source_type = (request.form.get("source_type") or "").strip()
+        source_name = (request.form.get("source_name") or "").strip()
 
         if not brand_name:
             flash("Enter a brand name to add.")
         else:
             try:
-                save_seo_brand_candidate(brand_name, category=category, notes=notes)
+                save_seo_brand_candidate(
+                    brand_name,
+                    category=category,
+                    notes=notes,
+                    source_type=source_type,
+                    source_name=source_name,
+                )
                 flash(f"{brand_name} added as an SEO brand candidate.")
                 return redirect(url_for("seo_brand_candidates"))
             except Exception as exc:
                 flash(f"Could not save candidate: {str(exc)}")
 
     candidate_rows = get_seo_brand_candidate_rows()
+    automation_settings = get_seo_automation_settings()
+    automation_usage = get_seo_automation_daily_usage()
 
     return render_template(
         "seo_brand_candidates.html",
         candidate_rows=candidate_rows,
-        max_results=SEO_BRAND_REFRESH_MAX_RESULTS,
+        max_results=automation_settings["max_results_per_test"],
+        automation_settings=automation_settings,
+        automation_usage=automation_usage,
     )
 
 
@@ -2399,7 +2884,7 @@ def promote_seo_brand_candidate_route(candidate_id):
     if not candidate:
         abort(404)
 
-    if not candidate.get("is_qualified"):
+    if not candidate.get("is_qualified") or candidate.get("quality_status") == "rejected":
         flash(f"{candidate['brand_name']} is not qualified yet.")
         return redirect(url_for("seo_brand_candidates"))
 
@@ -2483,7 +2968,11 @@ def bulk_promote_seo_brand_candidates():
             skipped_count += 1
             continue
 
-        if not candidate.get("is_qualified") or candidate.get("published_brand_id"):
+        if (
+            not candidate.get("is_qualified")
+            or candidate.get("published_brand_id")
+            or candidate.get("quality_status") == "rejected"
+        ):
             skipped_count += 1
             continue
 
@@ -2499,6 +2988,151 @@ def bulk_promote_seo_brand_candidates():
     )
     if errors:
         message += f" Details: {'; '.join(errors[:3])}"
+        if len(errors) > 3:
+            message += f"; plus {len(errors) - 3} more."
+    flash(message)
+
+    return redirect(url_for("seo_brand_candidates"))
+
+
+@app.route("/admin/seo-brand-candidates/run-next", methods=["POST"])
+@admin_required
+def run_next_seo_brand_candidates():
+    settings = get_seo_automation_settings()
+    usage = get_seo_automation_daily_usage()
+
+    if settings["kill_switch_enabled"]:
+        flash("SEO automation is stopped because the kill switch is enabled.")
+        return redirect(url_for("seo_brand_candidates"))
+
+    if not settings["is_enabled"]:
+        flash("SEO automation is disabled.")
+        return redirect(url_for("seo_brand_candidates"))
+
+    remaining_tests = settings["daily_test_limit"] - usage["tests"]
+    remaining_apify_runs = settings["daily_apify_run_limit"] - usage["apify_runs"]
+    run_limit = min(10, remaining_tests, remaining_apify_runs)
+
+    if run_limit <= 0:
+        flash("SEO automation daily limit reached. No candidates were tested.")
+        return redirect(url_for("seo_brand_candidates"))
+
+    candidates = get_next_seo_automation_candidates(run_limit)
+    if not candidates:
+        flash("No untested or failed SEO candidates are ready for automation.")
+        return redirect(url_for("seo_brand_candidates"))
+
+    run_id = create_seo_automation_run("run_next")
+    counts = {
+        "tested": 0,
+        "auto_published": 0,
+        "sent_to_review": 0,
+        "rejected": 0,
+        "failed": 0,
+    }
+    errors = []
+
+    for candidate in candidates:
+        try:
+            counts["tested"] += 1
+            ads = fetch_filtered_seo_brand_ads(
+                candidate["brand_name"],
+                country="NO",
+                max_results=settings["max_results_per_test"],
+            )
+
+            score, signals = calculate_seo_candidate_quality(candidate["brand_name"], ads)
+            result_count = len(ads)
+            preview_count = min(result_count, SEO_BRAND_PREVIEW_COUNT)
+
+            if preview_count == 0:
+                update_seo_brand_candidate_quality_result(
+                    candidate["id"],
+                    status="no_active_ads_found",
+                    result_count=result_count,
+                    preview_count=preview_count,
+                    quality_score=score,
+                    quality_status="rejected",
+                    quality_signals=signals,
+                )
+                counts["rejected"] += 1
+                continue
+
+            if score >= settings["auto_publish_threshold"]:
+                promote_seo_brand_candidate(candidate)
+                brand = get_brand_by_slug(candidate["brand_slug"]) or build_seo_brand_defaults(
+                    candidate["brand_name"],
+                    candidate["brand_slug"],
+                    category=candidate.get("category") or "",
+                )
+                save_seo_brand_ads_cache(brand, ads, country="NO")
+                update_seo_brand_candidate_quality_result(
+                    candidate["id"],
+                    status="qualified",
+                    result_count=result_count,
+                    preview_count=preview_count,
+                    quality_score=score,
+                    quality_status="auto_published",
+                    quality_signals=signals,
+                    auto_published=True,
+                )
+                counts["auto_published"] += 1
+            elif score >= settings["review_threshold"]:
+                update_seo_brand_candidate_quality_result(
+                    candidate["id"],
+                    status="qualified",
+                    result_count=result_count,
+                    preview_count=preview_count,
+                    quality_score=score,
+                    quality_status="needs_review",
+                    quality_signals=signals,
+                )
+                counts["sent_to_review"] += 1
+            else:
+                update_seo_brand_candidate_quality_result(
+                    candidate["id"],
+                    status="qualified",
+                    result_count=result_count,
+                    preview_count=preview_count,
+                    quality_score=score,
+                    quality_status="rejected",
+                    quality_signals=signals,
+                )
+                counts["rejected"] += 1
+
+        except Exception as exc:
+            counts["failed"] += 1
+            errors.append(f"{candidate['brand_name']}: {str(exc)}")
+            try:
+                update_seo_brand_candidate_quality_result(
+                    candidate["id"],
+                    status="failed",
+                    result_count=0,
+                    preview_count=0,
+                    quality_score=0,
+                    quality_status="failed",
+                    quality_signals={"error": str(exc)},
+                    error_message=str(exc),
+                )
+            except Exception as update_exc:
+                print("SEO automation candidate error save failed:", str(update_exc))
+
+    run_status = "completed" if not errors else "completed_with_errors"
+    finish_seo_automation_run(
+        run_id,
+        run_status,
+        counts,
+        error="; ".join(errors[:3]),
+    )
+
+    message = (
+        f"SEO automation complete: {counts['tested']} tested, "
+        f"{counts['auto_published']} auto-published, "
+        f"{counts['sent_to_review']} sent to review, "
+        f"{counts['rejected']} rejected, {counts['failed']} failed."
+    )
+    if errors:
+        message += f" Errors: {'; '.join(errors[:3])}"
         if len(errors) > 3:
             message += f"; plus {len(errors) - 3} more."
     flash(message)

@@ -54,20 +54,76 @@
                 ></textarea>
             </label>
 
+            <label>
+                <span class="field-label">Source type</span>
+                <input
+                    class="form-input"
+                    type="text"
+                    name="source_type"
+                    placeholder="Manual, search data, SaaS list"
+                >
+            </label>
+
+            <label>
+                <span class="field-label">Source name</span>
+                <input
+                    class="form-input"
+                    type="text"
+                    name="source_name"
+                    placeholder="Admin research"
+                >
+            </label>
+
             <button class="form-button" type="submit">Add candidate</button>
         </form>
     </div>
 
     <div class="panel">
-        <h2>Qualification rule</h2>
+        <h2>Automation rule</h2>
         <p class="muted">
-            Candidates are qualified only when a manual test returns at least one filtered ad preview.
-            If a test returns zero previews, the candidate is marked as not qualified for now.
+            Run up to 10 untested or failed candidates at a time. Score 70+ auto-publishes and caches previews,
+            score 50-69 goes to review, and weaker candidates are rejected.
         </p>
         <p class="muted">
-            Adding or testing candidates does not create public pages, update seo_brands.py, or add sitemap URLs.
-            Promotion publishes one qualified brand from the database. Testing is capped at {{ max_results }} fetched results.
+            Each run may trigger Apify cost. Testing is capped at {{ max_results }} fetched results per candidate.
         </p>
+        {% if automation_settings.kill_switch_enabled %}
+            <p class="danger-note">Automation kill switch is enabled. Run next 10 will not test candidates.</p>
+        {% endif %}
+        {% if not automation_settings.is_enabled %}
+            <p class="danger-note">SEO automation is disabled.</p>
+        {% endif %}
+        <form method="post" action="{{ url_for('run_next_seo_brand_candidates') }}">
+            <button class="form-button" type="submit">Run next 10 candidates</button>
+        </form>
+    </div>
+</div>
+
+<div class="simple-grid five-col">
+    <div class="panel">
+        <div class="pill">Today</div>
+        <h3>{{ automation_usage.tests }}</h3>
+        <p class="muted">Tests run</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Limit</div>
+        <h3>{{ automation_settings.daily_test_limit }}</h3>
+        <p class="muted">Daily tests</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Auto</div>
+        <h3>{{ automation_usage.auto_published }}</h3>
+        <p class="muted">Auto-published</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Review</div>
+        <h3>{{ automation_usage.sent_to_review }}</h3>
+        <p class="muted">Sent to review</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Rejected</div>
+        <h3>{{ automation_usage.rejected }}</h3>
+        <p class="muted">Rejected</p>
     </div>
 </div>
 
@@ -87,7 +143,9 @@
                     <th>Brand</th>
                     <th>Slug</th>
                     <th>Category</th>
+                    <th>Source</th>
                     <th>Status</th>
+                    <th>Quality</th>
                     <th>Results</th>
                     <th>Previews</th>
                     <th>Last tested</th>
@@ -102,7 +160,7 @@
                 {% for row in candidate_rows %}
                     <tr>
                         <td>
-                            {% if row.is_qualified and not row.published_brand_id %}
+                            {% if row.is_qualified and not row.published_brand_id and row.quality_status != 'rejected' %}
                                 <input
                                     type="checkbox"
                                     name="candidate_ids"
@@ -118,7 +176,17 @@
                         <td>{{ row.brand_slug }}</td>
                         <td>{{ row.category or '-' }}</td>
                         <td>
+                            {{ row.source_type or '-' }}
+                            {% if row.source_name %}
+                                <br><span class="muted">{{ row.source_name }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
                             <span class="pill cache-status {{ row.status_key }}">{{ row.status_label }}</span>
+                        </td>
+                        <td>
+                            <span class="pill cache-status {{ row.quality_status }}">{{ row.quality_status_label }}</span>
+                            <div>{{ row.quality_score or 0 }}</div>
                         </td>
                         <td>{{ row.result_count or 0 }}</td>
                         <td>{{ row.preview_count or 0 }}</td>
@@ -154,7 +222,7 @@
                             <form method="post" action="{{ url_for('test_seo_brand_candidate', candidate_id=row.id) }}">
                                 <button class="secondary-button" type="submit">Test</button>
                             </form>
-                            {% if row.is_qualified and not row.published_brand_id %}
+                            {% if row.is_qualified and not row.published_brand_id and row.quality_status != 'rejected' %}
                                 <form method="post" action="{{ url_for('promote_seo_brand_candidate_route', candidate_id=row.id) }}">
                                     <button class="secondary-button" type="submit">Promote to SEO brand</button>
                                 </form>
@@ -163,7 +231,7 @@
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="13">
+                        <td colspan="15">
                             <span class="muted">No candidates added yet.</span>
                         </td>
                     </tr>
