@@ -10,8 +10,37 @@
             Refresh cached ad previews for public brand pages. Public pages only read from this cache.
         </p>
         <p>
+            <a class="topbar-btn primary" href="{{ url_for('seo_brand_candidates') }}">Test candidate brand</a>
             <a class="topbar-btn" href="{{ url_for('admin') }}">Back to admin</a>
         </p>
+    </div>
+</div>
+
+<div class="simple-grid five-col">
+    <div class="panel">
+        <div class="pill">Total</div>
+        <h3>{{ cache_summary.total_brands }}</h3>
+        <p class="muted">Brands</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Previews</div>
+        <h3>{{ cache_summary.with_previews }}</h3>
+        <p class="muted">Preview available</p>
+    </div>
+    <div class="panel">
+        <div class="pill">No ads</div>
+        <h3>{{ cache_summary.no_active_ads }}</h3>
+        <p class="muted">No active ads found</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Failed</div>
+        <h3>{{ cache_summary.failed }}</h3>
+        <p class="muted">Failed refreshes</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Pending</div>
+        <h3>{{ cache_summary.not_refreshed }}</h3>
+        <p class="muted">Not refreshed</p>
     </div>
 </div>
 
@@ -35,7 +64,12 @@
                     <tr>
                         <td>{{ row.name }}</td>
                         <td>{{ row.slug }}</td>
-                        <td>{{ row.refresh_status }}</td>
+                        <td>
+                            <span class="pill cache-status {{ row.status_key }}">{{ row.display_status }}</span>
+                            {% if row.is_expired %}
+                                <span class="pill cache-status expired">Expired</span>
+                            {% endif %}
+                        </td>
                         <td>
                             {% if row.preview_count is not none %}
                                 {{ row.preview_count }}

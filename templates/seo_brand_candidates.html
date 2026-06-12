@@ -1,0 +1,191 @@
+{% extends "layout.html" %}
+{% block title %}SEO brand candidates - RunningAds{% endblock %}
+
+{% block content %}
+<div class="simple-grid">
+    <div class="panel">
+        <div class="pill">SEO candidates</div>
+        <h2>Test a brand before adding a public page</h2>
+        <p class="muted">
+            Run a small admin-only preview test before deciding whether a brand should be added to the
+            programmatic SEO system.
+        </p>
+        <p class="danger-note">
+            Warning: testing a brand may trigger an Apify run and may cost money. Use this manually and one brand at a time.
+        </p>
+        <p>
+            <a class="topbar-btn" href="{{ url_for('seo_brand_cache_admin') }}">Back to SEO cache</a>
+            <a class="topbar-btn" href="{{ url_for('admin') }}">Back to admin</a>
+        </p>
+    </div>
+</div>
+
+<div class="simple-grid two-col">
+    <div class="panel">
+        <h2>Candidate test</h2>
+        <form method="post" class="stack">
+            <label>
+                <span class="field-label">Brand name</span>
+                <input
+                    class="form-input"
+                    type="text"
+                    name="brand_name"
+                    value="{{ brand_name }}"
+                    placeholder="Manscaped"
+                    required
+                >
+            </label>
+
+            <label>
+                <span class="field-label">Category, optional</span>
+                <input
+                    class="form-input"
+                    type="text"
+                    name="category"
+                    value="{{ category }}"
+                    placeholder="Men's grooming"
+                >
+            </label>
+
+            <button class="form-button" type="submit">Test brand</button>
+        </form>
+        <p class="muted">
+            This test uses the same controlled search and filtering path as SEO cache refresh, capped at
+            {{ max_results }} fetched results. It does not create a public page, update seo_brands.py, or add a sitemap URL.
+        </p>
+    </div>
+
+    <div class="panel">
+        <h2>How to read results</h2>
+        <p class="muted">
+            Preview available means the brand returned filtered ads that can support a useful public SEO preview.
+            No active ads found means the brand is not recommended for preview pages right now.
+        </p>
+        <p class="muted">
+            Results shown here are temporary. Refreshing this page or testing another brand does not store candidate data.
+        </p>
+    </div>
+</div>
+
+{% if candidate_result %}
+    <div class="simple-grid">
+        <div class="panel">
+            <div class="pill cache-status {{ candidate_result.status_key }}">{{ candidate_result.status }}</div>
+            <h2>{{ candidate_result.brand_name }}</h2>
+            {% if candidate_result.category %}
+                <p class="muted">{{ candidate_result.category }}</p>
+            {% endif %}
+
+            <table class="table">
+                <tbody>
+                    <tr>
+                        <th>Slug preview</th>
+                        <td>{{ candidate_result.brand_slug }}</td>
+                    </tr>
+                    <tr>
+                        <th>Result count</th>
+                        <td>{{ candidate_result.result_count }}</td>
+                    </tr>
+                    <tr>
+                        <th>Preview count</th>
+                        <td>{{ candidate_result.preview_count }}</td>
+                    </tr>
+                    {% if candidate_result.error %}
+                        <tr>
+                            <th>Error</th>
+                            <td><span class="danger-note">{{ candidate_result.error }}</span></td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+
+            {% if candidate_result.preview_count > 0 %}
+                <p class="pill cache-status preview_available">Good candidate for SEO expansion</p>
+            {% elif candidate_result.status_key == "failed" %}
+                <p class="danger-note">The test failed. Review the error before testing again.</p>
+            {% else %}
+                <p class="pill cache-status no_active_ads">Not recommended for SEO preview pages right now</p>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if candidate_result.ads %}
+        <section class="simple-grid seo-ad-preview-section">
+            <div class="results-header">
+                <div>
+                    <h2>Sample ad previews</h2>
+                    <p>Temporary admin-only examples from this candidate test.</p>
+                </div>
+            </div>
+
+            <div class="seo-ad-preview-grid">
+                {% for ad in candidate_result.ads %}
+                    <article class="ad-card seo-ad-card">
+                        <div class="card-top-row">
+                            {% if loop.index == 1 %}
+                                <div class="card-badge badge-winner">Running longest</div>
+                            {% else %}
+                                <div class="card-badge badge-active">Active ad</div>
+                            {% endif %}
+                        </div>
+
+                        {% if ad.media_url %}
+                            <div class="ad-media-wrap seo-ad-media-wrap">
+                                <img
+                                    src="{{ ad.media_url }}"
+                                    alt="Ad preview for {{ ad.display_page_name }}"
+                                    class="ad-media seo-ad-media"
+                                    loading="lazy"
+                                >
+                            </div>
+                        {% else %}
+                            <div class="seo-ad-placeholder">
+                                <div class="visual-pill">Candidate ad</div>
+                                <div class="seo-ad-placeholder-brand">{{ ad.display_page_name }}</div>
+                                {% if ad.days_running is defined and ad.days_running is not none %}
+                                    <div class="seo-ad-placeholder-running">
+                                        Running for {{ ad.days_running }} day{% if ad.days_running != 1 %}s{% endif %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        {% endif %}
+
+                        <div class="ad-brand seo-ad-brand">{{ ad.display_page_name }}</div>
+
+                        {% if ad.days_running is defined and ad.days_running is not none %}
+                            <div class="ad-running seo-ad-running">
+                                <span class="running-text seo-running-text">
+                                    Running for {{ ad.days_running }} day{% if ad.days_running != 1 %}s{% endif %}
+                                </span>
+                            </div>
+                        {% endif %}
+
+                        {% if ad.start_date_display %}
+                            <div class="ad-date">Started: {{ ad.start_date_display }}</div>
+                        {% endif %}
+
+                        {% if ad.display_ad_text %}
+                            <p class="ad-copy seo-ad-copy">
+                                {{ ad.display_ad_text|truncate(180, True) }}
+                            </p>
+                        {% endif %}
+
+                        {% if ad.snapshot_url %}
+                            <div class="ad-actions seo-ad-actions">
+                                <a
+                                    href="{{ ad.snapshot_url }}"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="open-ad-button"
+                                >
+                                    Open ad
+                                </a>
+                            </div>
+                        {% endif %}
+                    </article>
+                {% endfor %}
+            </div>
+        </section>
+    {% endif %}
+{% endif %}
+{% endblock %}

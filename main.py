@@ -905,22 +905,79 @@ def get_seo_brand_cache_admin_rows():
         conn.close()
 
     rows = []
+    summary = {
+        "total_brands": len(BRAND_PAGES),
+        "with_previews": 0,
+        "no_active_ads": 0,
+        "failed": 0,
+        "not_refreshed": 0,
+    }
+    now = utcnow()
+
     for brand in BRAND_PAGES:
         cached = cache_by_slug.get(brand["slug"], {})
+        raw_status = cached.get("refresh_status")
+        preview_count = int(cached.get("preview_count") or 0)
+        expires_at = cached.get("expires_at")
+        is_expired = bool(expires_at and expires_at < now)
+
+        if raw_status == "failed":
+            display_status = "Failed"
+            status_key = "failed"
+            summary["failed"] += 1
+        elif not raw_status:
+            display_status = "Not refreshed"
+            status_key = "not_refreshed"
+            summary["not_refreshed"] += 1
+        elif preview_count > 0:
+            display_status = "Preview available"
+            status_key = "preview_available"
+            summary["with_previews"] += 1
+        else:
+            display_status = "No active ads found"
+            status_key = "no_active_ads"
+            summary["no_active_ads"] += 1
+
         rows.append(
             {
                 "name": brand["name"],
                 "slug": brand["slug"],
-                "refresh_status": cached.get("refresh_status") or "not refreshed",
+                "refresh_status": raw_status,
+                "display_status": display_status,
+                "status_key": status_key,
+                "is_expired": is_expired,
                 "result_count": cached.get("result_count"),
-                "preview_count": cached.get("preview_count"),
+                "preview_count": preview_count if raw_status else None,
                 "fetched_at": cached.get("fetched_at"),
-                "expires_at": cached.get("expires_at"),
+                "expires_at": expires_at,
                 "last_error": cached.get("last_error"),
             }
         )
 
-    return rows
+    return {
+        "rows": rows,
+        "summary": summary,
+    }
+
+
+def slugify_brand_name(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
+    return slug or "candidate"
+
+
+def fetch_filtered_seo_brand_ads(search_query: str, country: str = "NO"):
+    service = get_meta_ads_service()
+    ads = service.search_ads(
+        brand=search_query,
+        country=country,
+        max_results=SEO_BRAND_REFRESH_MAX_RESULTS,
+    )
+
+    relevance_filter = get_ad_relevance_filter()
+    return relevance_filter.filter_ads(
+        search_brand=search_query,
+        ads=ads,
+    )
 
 
 def save_seo_brand_ads_cache(brand, ads: list, country: str = "NO"):
@@ -1706,9 +1763,84 @@ Give a short weekly-style summary:
 @app.route("/admin/seo-brand-cache")
 @admin_required
 def seo_brand_cache_admin():
+    cache_admin_data = get_seo_brand_cache_admin_rows()
     return render_template(
         "seo_brand_cache_admin.html",
-        cache_rows=get_seo_brand_cache_admin_rows(),
+        cache_rows=cache_admin_data["rows"],
+        cache_summary=cache_admin_data["summary"],
+    )
+
+
+@app.route("/admin/seo-brand-candidates", methods=["GET", "POST"])
+@admin_required
+def seo_brand_candidates():
+    brand_name = ""
+    category = ""
+    candidate_result = None
+
+    if request.method == "POST":
+        brand_name = (request.form.get("brand_name") or "").strip()
+        category = (request.form.get("category") or "").strip()
+        country = "NO"
+
+        if not brand_name:
+            flash("Enter a brand name to test.")
+        else:
+            brand_slug = slugify_brand_name(brand_name)
+
+            try:
+                ads = fetch_filtered_seo_brand_ads(brand_name, country=country)
+                preview_ads = [
+                    prepare_seo_ad_preview(ad, brand_name, brand_slug)
+                    for ad in ads[:SEO_BRAND_PREVIEW_COUNT]
+                ]
+                preview_count = len(preview_ads)
+
+                candidate_result = {
+                    "brand_name": brand_name,
+                    "category": category,
+                    "brand_slug": brand_slug,
+                    "status": "Preview available" if preview_count > 0 else "No active ads found",
+                    "status_key": "preview_available" if preview_count > 0 else "no_active_ads",
+                    "preview_count": preview_count,
+                    "result_count": len(ads),
+                    "ads": preview_ads,
+                    "error": None,
+                }
+
+            except MetaAdsServiceError as exc:
+                candidate_result = {
+                    "brand_name": brand_name,
+                    "category": category,
+                    "brand_slug": brand_slug,
+                    "status": "Failed",
+                    "status_key": "failed",
+                    "preview_count": 0,
+                    "result_count": 0,
+                    "ads": [],
+                    "error": str(exc),
+                }
+
+            except Exception as exc:
+                print("SEO brand candidate test error:", str(exc))
+                candidate_result = {
+                    "brand_name": brand_name,
+                    "category": category,
+                    "brand_slug": brand_slug,
+                    "status": "Failed",
+                    "status_key": "failed",
+                    "preview_count": 0,
+                    "result_count": 0,
+                    "ads": [],
+                    "error": str(exc),
+                }
+
+    return render_template(
+        "seo_brand_candidates.html",
+        brand_name=brand_name,
+        category=category,
+        candidate_result=candidate_result,
+        max_results=SEO_BRAND_REFRESH_MAX_RESULTS,
     )
 
 
@@ -1722,19 +1854,7 @@ def refresh_seo_brand_cache(brand_slug):
     country = "NO"
 
     try:
-        service = get_meta_ads_service()
-        ads = service.search_ads(
-            brand=brand["search_query"],
-            country=country,
-            max_results=SEO_BRAND_REFRESH_MAX_RESULTS,
-        )
-
-        relevance_filter = get_ad_relevance_filter()
-        ads = relevance_filter.filter_ads(
-            search_brand=brand["search_query"],
-            ads=ads,
-        )
-
+        ads = fetch_filtered_seo_brand_ads(brand["search_query"], country=country)
         save_seo_brand_ads_cache(brand, ads, country=country)
 
         if request.form.get("return_to_admin") == "1":
