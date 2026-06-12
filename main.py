@@ -181,6 +181,27 @@ def ensure_schema():
 
                 cur.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS seo_brand_candidates (
+                        id SERIAL PRIMARY KEY,
+                        brand_name TEXT NOT NULL,
+                        brand_slug TEXT UNIQUE NOT NULL,
+                        category TEXT,
+                        status TEXT DEFAULT 'not_tested',
+                        result_count INTEGER DEFAULT 0,
+                        preview_count INTEGER DEFAULT 0,
+                        last_tested_at TIMESTAMPTZ,
+                        last_success_at TIMESTAMPTZ,
+                        last_error TEXT,
+                        is_qualified BOOLEAN DEFAULT FALSE,
+                        notes TEXT,
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """
+                )
+
+                cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS feedback (
                         id SERIAL PRIMARY KEY,
                         user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -245,6 +266,20 @@ def ensure_schema():
                 cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
                 cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
 
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS brand_name TEXT;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS brand_slug TEXT;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS category TEXT;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'not_tested';")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS result_count INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS preview_count INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS last_tested_at TIMESTAMPTZ;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS last_success_at TIMESTAMPTZ;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS last_error TEXT;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS is_qualified BOOLEAN DEFAULT FALSE;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS notes TEXT;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
+
                 cur.execute(
                     """
                     CREATE INDEX IF NOT EXISTS idx_searches_user_created_at
@@ -267,6 +302,12 @@ def ensure_schema():
                     """
                     CREATE INDEX IF NOT EXISTS idx_seo_brand_ad_cache_brand_slug
                     ON seo_brand_ad_cache(brand_slug);
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_seo_brand_candidates_brand_slug
+                    ON seo_brand_candidates(brand_slug);
                     """
                 )
 
@@ -978,6 +1019,172 @@ def fetch_filtered_seo_brand_ads(search_query: str, country: str = "NO"):
         search_brand=search_query,
         ads=ads,
     )
+
+
+def get_candidate_status_label(status: str):
+    labels = {
+        "qualified": "Qualified",
+        "no_active_ads_found": "No active ads found",
+        "failed": "Failed",
+        "not_tested": "Not tested",
+    }
+    return labels.get(status or "not_tested", "Not tested")
+
+
+def get_seo_brand_candidate_rows():
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, brand_name, brand_slug, category, status,
+                           result_count, preview_count, last_tested_at,
+                           last_success_at, last_error, is_qualified,
+                           notes, created_at, updated_at
+                    FROM seo_brand_candidates
+                    ORDER BY is_qualified DESC, updated_at DESC, brand_name ASC
+                    """
+                )
+                rows = []
+                for row in cur.fetchall():
+                    status = row[4] or "not_tested"
+                    rows.append(
+                        {
+                            "id": row[0],
+                            "brand_name": row[1],
+                            "brand_slug": row[2],
+                            "category": row[3],
+                            "status": status,
+                            "status_label": get_candidate_status_label(status),
+                            "status_key": status,
+                            "result_count": row[5],
+                            "preview_count": row[6],
+                            "last_tested_at": row[7],
+                            "last_success_at": row[8],
+                            "last_error": row[9],
+                            "is_qualified": row[10],
+                            "notes": row[11],
+                            "created_at": row[12],
+                            "updated_at": row[13],
+                        }
+                    )
+                return rows
+    finally:
+        conn.close()
+
+
+def get_seo_brand_candidate(candidate_id: int):
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, brand_name, brand_slug, category, status,
+                           result_count, preview_count, last_tested_at,
+                           last_success_at, last_error, is_qualified,
+                           notes, created_at, updated_at
+                    FROM seo_brand_candidates
+                    WHERE id = %s
+                    """,
+                    (candidate_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                status = row[4] or "not_tested"
+                return {
+                    "id": row[0],
+                    "brand_name": row[1],
+                    "brand_slug": row[2],
+                    "category": row[3],
+                    "status": status,
+                    "status_label": get_candidate_status_label(status),
+                    "status_key": status,
+                    "result_count": row[5],
+                    "preview_count": row[6],
+                    "last_tested_at": row[7],
+                    "last_success_at": row[8],
+                    "last_error": row[9],
+                    "is_qualified": row[10],
+                    "notes": row[11],
+                    "created_at": row[12],
+                    "updated_at": row[13],
+                }
+    finally:
+        conn.close()
+
+
+def save_seo_brand_candidate(brand_name: str, category: str = "", notes: str = ""):
+    brand_slug = slugify_brand_name(brand_name)
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO seo_brand_candidates (
+                        brand_name, brand_slug, category, notes, status, updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, 'not_tested', NOW())
+                    ON CONFLICT (brand_slug)
+                    DO UPDATE SET
+                        brand_name = EXCLUDED.brand_name,
+                        category = EXCLUDED.category,
+                        notes = EXCLUDED.notes,
+                        updated_at = NOW()
+                    RETURNING id
+                    """,
+                    (
+                        brand_name,
+                        brand_slug,
+                        category or None,
+                        notes or None,
+                    ),
+                )
+                return cur.fetchone()[0]
+    finally:
+        conn.close()
+
+
+def update_seo_brand_candidate_test_result(
+    candidate_id: int,
+    status: str,
+    result_count: int = 0,
+    preview_count: int = 0,
+    error_message: str = "",
+):
+    is_qualified = preview_count > 0
+    last_success_at_sql = "NOW()" if is_qualified else "last_success_at"
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    UPDATE seo_brand_candidates
+                    SET status = %s,
+                        result_count = %s,
+                        preview_count = %s,
+                        last_tested_at = NOW(),
+                        last_success_at = {last_success_at_sql},
+                        last_error = %s,
+                        is_qualified = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (
+                        status,
+                        result_count,
+                        preview_count,
+                        (error_message[:1000] if error_message else None),
+                        is_qualified,
+                        candidate_id,
+                    ),
+                )
+    finally:
+        conn.close()
 
 
 def save_seo_brand_ads_cache(brand, ads: list, country: str = "NO"):
@@ -1774,74 +1981,73 @@ def seo_brand_cache_admin():
 @app.route("/admin/seo-brand-candidates", methods=["GET", "POST"])
 @admin_required
 def seo_brand_candidates():
-    brand_name = ""
-    category = ""
-    candidate_result = None
-
     if request.method == "POST":
         brand_name = (request.form.get("brand_name") or "").strip()
         category = (request.form.get("category") or "").strip()
-        country = "NO"
+        notes = (request.form.get("notes") or "").strip()
 
         if not brand_name:
-            flash("Enter a brand name to test.")
+            flash("Enter a brand name to add.")
         else:
-            brand_slug = slugify_brand_name(brand_name)
-
             try:
-                ads = fetch_filtered_seo_brand_ads(brand_name, country=country)
-                preview_ads = [
-                    prepare_seo_ad_preview(ad, brand_name, brand_slug)
-                    for ad in ads[:SEO_BRAND_PREVIEW_COUNT]
-                ]
-                preview_count = len(preview_ads)
-
-                candidate_result = {
-                    "brand_name": brand_name,
-                    "category": category,
-                    "brand_slug": brand_slug,
-                    "status": "Preview available" if preview_count > 0 else "No active ads found",
-                    "status_key": "preview_available" if preview_count > 0 else "no_active_ads",
-                    "preview_count": preview_count,
-                    "result_count": len(ads),
-                    "ads": preview_ads,
-                    "error": None,
-                }
-
-            except MetaAdsServiceError as exc:
-                candidate_result = {
-                    "brand_name": brand_name,
-                    "category": category,
-                    "brand_slug": brand_slug,
-                    "status": "Failed",
-                    "status_key": "failed",
-                    "preview_count": 0,
-                    "result_count": 0,
-                    "ads": [],
-                    "error": str(exc),
-                }
-
+                save_seo_brand_candidate(brand_name, category=category, notes=notes)
+                flash(f"{brand_name} added as an SEO brand candidate.")
+                return redirect(url_for("seo_brand_candidates"))
             except Exception as exc:
-                print("SEO brand candidate test error:", str(exc))
-                candidate_result = {
-                    "brand_name": brand_name,
-                    "category": category,
-                    "brand_slug": brand_slug,
-                    "status": "Failed",
-                    "status_key": "failed",
-                    "preview_count": 0,
-                    "result_count": 0,
-                    "ads": [],
-                    "error": str(exc),
-                }
+                flash(f"Could not save candidate: {str(exc)}")
+
+    candidate_rows = get_seo_brand_candidate_rows()
 
     return render_template(
         "seo_brand_candidates.html",
-        brand_name=brand_name,
-        category=category,
-        candidate_result=candidate_result,
+        candidate_rows=candidate_rows,
         max_results=SEO_BRAND_REFRESH_MAX_RESULTS,
     )
+
+
+@app.route("/admin/seo-brand-candidates/<int:candidate_id>/test", methods=["POST"])
+@admin_required
+def test_seo_brand_candidate(candidate_id):
+    candidate = get_seo_brand_candidate(candidate_id)
+    if not candidate:
+        abort(404)
+
+    try:
+        ads = fetch_filtered_seo_brand_ads(candidate["brand_name"], country="NO")
+        preview_count = min(len(ads), SEO_BRAND_PREVIEW_COUNT)
+        status = "qualified" if preview_count > 0 else "no_active_ads_found"
+        update_seo_brand_candidate_test_result(
+            candidate_id,
+            status=status,
+            result_count=len(ads),
+            preview_count=preview_count,
+        )
+
+        if preview_count > 0:
+            flash(f"{candidate['brand_name']} qualified with {preview_count} preview ads.")
+        else:
+            flash(f"{candidate['brand_name']} tested: no active ads found.")
+
+    except MetaAdsServiceError as exc:
+        error_message = str(exc)
+        update_seo_brand_candidate_test_result(
+            candidate_id,
+            status="failed",
+            error_message=error_message,
+        )
+        flash(f"{candidate['brand_name']} test failed: {error_message}")
+
+    except Exception as exc:
+        error_message = str(exc)
+        print("SEO brand candidate test error:", error_message)
+        update_seo_brand_candidate_test_result(
+            candidate_id,
+            status="failed",
+            error_message=error_message,
+        )
+        flash(f"{candidate['brand_name']} test failed: {error_message}")
+
+    return redirect(url_for("seo_brand_candidates"))
 
 
 @app.route("/admin/seo-brand-cache/<brand_slug>/refresh", methods=["POST"])

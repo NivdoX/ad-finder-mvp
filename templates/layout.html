@@ -204,13 +204,16 @@
         .cache-status {
             margin: 0 6px 6px 0;
         }
-        .cache-status.preview_available {
+        .cache-status.preview_available,
+        .cache-status.qualified {
             background: rgba(74, 222, 128, 0.12);
             border-color: rgba(74, 222, 128, 0.2);
             color: #dcfce7;
         }
         .cache-status.no_active_ads,
-        .cache-status.not_refreshed {
+        .cache-status.no_active_ads_found,
+        .cache-status.not_refreshed,
+        .cache-status.not_tested {
             background: rgba(148, 163, 184, 0.10);
             border-color: rgba(148, 163, 184, 0.18);
             color: #e2e8f0;
