@@ -8,7 +8,7 @@
         <h2>Brand qualification tracker</h2>
         <p class="muted">
             Add candidate brands here before creating public SEO pages. Test candidates manually to see
-            whether they return useful ad previews.
+            whether they return useful ad previews, then promote qualified candidates when they are ready.
         </p>
         <p class="danger-note">
             Warning: every test may trigger an Apify run and may cost money. Test one brand at a time.
@@ -65,8 +65,8 @@
             If a test returns zero previews, the candidate is marked as not qualified for now.
         </p>
         <p class="muted">
-            This tracker does not create public pages, update seo_brands.py, or add sitemap URLs.
-            Testing is capped at {{ max_results }} fetched results.
+            Adding or testing candidates does not create public pages, update seo_brands.py, or add sitemap URLs.
+            Promotion publishes one qualified brand from the database. Testing is capped at {{ max_results }} fetched results.
         </p>
     </div>
 </div>
@@ -85,9 +85,10 @@
                     <th>Previews</th>
                     <th>Last tested</th>
                     <th>Qualified</th>
+                    <th>Published</th>
                     <th>Last error</th>
                     <th>Notes</th>
-                    <th>Action</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -110,6 +111,18 @@
                             {% endif %}
                         </td>
                         <td>
+                            {% if row.published_brand_id %}
+                                <span class="pill cache-status qualified">Published</span>
+                                <div>
+                                    <a class="brand-link" href="{{ url_for('brand_page', brand_slug=row.brand_slug) }}">
+                                        View page
+                                    </a>
+                                </div>
+                            {% else %}
+                                <span class="pill cache-status not_tested">Not published</span>
+                            {% endif %}
+                        </td>
+                        <td>
                             {% if row.last_error %}
                                 <span class="danger-note">{{ row.last_error|truncate(120, True) }}</span>
                             {% else %}
@@ -121,11 +134,16 @@
                             <form method="post" action="{{ url_for('test_seo_brand_candidate', candidate_id=row.id) }}">
                                 <button class="secondary-button" type="submit">Test</button>
                             </form>
+                            {% if row.is_qualified and not row.published_brand_id %}
+                                <form method="post" action="{{ url_for('promote_seo_brand_candidate_route', candidate_id=row.id) }}">
+                                    <button class="secondary-button" type="submit">Promote to SEO brand</button>
+                                </form>
+                            {% endif %}
                         </td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="11">
+                        <td colspan="12">
                             <span class="muted">No candidates added yet.</span>
                         </td>
                     </tr>

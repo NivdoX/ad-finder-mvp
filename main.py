@@ -28,7 +28,11 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from services.ad_relevance import AdRelevanceFilter
 from services.meta_ads import MetaAdsService, MetaAdsServiceError
-from seo_brands import BRAND_PAGES, get_brand_by_slug, get_related_brands
+from seo_brands import (
+    BRAND_PAGES,
+    get_brand_by_slug as get_static_brand_by_slug,
+    get_related_brands as get_static_related_brands,
+)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "").strip()
@@ -181,6 +185,31 @@ def ensure_schema():
 
                 cur.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS seo_brands (
+                        id SERIAL PRIMARY KEY,
+                        brand_name TEXT NOT NULL,
+                        brand_slug TEXT UNIQUE NOT NULL,
+                        search_query TEXT NOT NULL,
+                        category TEXT,
+                        focus TEXT,
+                        audience TEXT,
+                        creative_angle TEXT,
+                        market_context TEXT,
+                        headline TEXT,
+                        meta_title TEXT,
+                        meta_description TEXT,
+                        summary TEXT,
+                        is_published BOOLEAN DEFAULT TRUE,
+                        source_candidate_id INTEGER,
+                        published_at TIMESTAMPTZ,
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """
+                )
+
+                cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS seo_brand_candidates (
                         id SERIAL PRIMARY KEY,
                         brand_name TEXT NOT NULL,
@@ -193,6 +222,8 @@ def ensure_schema():
                         last_success_at TIMESTAMPTZ,
                         last_error TEXT,
                         is_qualified BOOLEAN DEFAULT FALSE,
+                        promoted_at TIMESTAMPTZ,
+                        published_brand_id INTEGER,
                         notes TEXT,
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -266,6 +297,24 @@ def ensure_schema():
                 cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
                 cur.execute("ALTER TABLE seo_brand_ad_cache ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
 
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS brand_name TEXT;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS brand_slug TEXT;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS search_query TEXT;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS category TEXT;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS focus TEXT;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS audience TEXT;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS creative_angle TEXT;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS market_context TEXT;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS headline TEXT;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS meta_title TEXT;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS meta_description TEXT;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS summary TEXT;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS is_published BOOLEAN DEFAULT TRUE;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS source_candidate_id INTEGER;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ;")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
+                cur.execute("ALTER TABLE seo_brands ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
+
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS brand_name TEXT;")
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS brand_slug TEXT;")
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS category TEXT;")
@@ -276,6 +325,8 @@ def ensure_schema():
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS last_success_at TIMESTAMPTZ;")
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS last_error TEXT;")
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS is_qualified BOOLEAN DEFAULT FALSE;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS promoted_at TIMESTAMPTZ;")
+                cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS published_brand_id INTEGER;")
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS notes TEXT;")
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
                 cur.execute("ALTER TABLE seo_brand_candidates ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
@@ -306,10 +357,69 @@ def ensure_schema():
                 )
                 cur.execute(
                     """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_seo_brands_brand_slug
+                    ON seo_brands(brand_slug);
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_seo_brands_published_category
+                    ON seo_brands(is_published, category);
+                    """
+                )
+                cur.execute(
+                    """
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_seo_brand_candidates_brand_slug
                     ON seo_brand_candidates(brand_slug);
                     """
                 )
+
+                for brand in BRAND_PAGES:
+                    cur.execute(
+                        """
+                        INSERT INTO seo_brands (
+                            brand_name, brand_slug, search_query, category, focus,
+                            audience, creative_angle, market_context, headline,
+                            meta_title, meta_description, summary, is_published,
+                            published_at, updated_at
+                        )
+                        VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                            TRUE, COALESCE(%s, NOW()), NOW()
+                        )
+                        ON CONFLICT (brand_slug)
+                        DO UPDATE SET
+                            brand_name = EXCLUDED.brand_name,
+                            search_query = EXCLUDED.search_query,
+                            category = EXCLUDED.category,
+                            focus = EXCLUDED.focus,
+                            audience = EXCLUDED.audience,
+                            creative_angle = EXCLUDED.creative_angle,
+                            market_context = EXCLUDED.market_context,
+                            headline = EXCLUDED.headline,
+                            meta_title = EXCLUDED.meta_title,
+                            meta_description = EXCLUDED.meta_description,
+                            summary = EXCLUDED.summary,
+                            is_published = TRUE,
+                            published_at = COALESCE(seo_brands.published_at, NOW()),
+                            updated_at = NOW()
+                        """,
+                        (
+                            brand["name"],
+                            brand["slug"],
+                            brand["search_query"],
+                            brand["category"],
+                            brand["focus"],
+                            brand["audience"],
+                            brand["creative_angle"],
+                            brand["market_context"],
+                            brand["headline"],
+                            brand["meta_title"],
+                            brand["meta_description"],
+                            brand["summary"],
+                            None,
+                        ),
+                    )
 
                 cur.execute(
                     """
@@ -945,9 +1055,10 @@ def get_seo_brand_cache_admin_rows():
     finally:
         conn.close()
 
+    published_brands = get_published_seo_brands()
     rows = []
     summary = {
-        "total_brands": len(BRAND_PAGES),
+        "total_brands": len(published_brands),
         "with_previews": 0,
         "no_active_ads": 0,
         "failed": 0,
@@ -955,7 +1066,7 @@ def get_seo_brand_cache_admin_rows():
     }
     now = utcnow()
 
-    for brand in BRAND_PAGES:
+    for brand in published_brands:
         cached = cache_by_slug.get(brand["slug"], {})
         raw_status = cached.get("refresh_status")
         preview_count = int(cached.get("preview_count") or 0)
@@ -1021,6 +1132,149 @@ def fetch_filtered_seo_brand_ads(search_query: str, country: str = "NO"):
     )
 
 
+def build_seo_brand_defaults(brand_name: str, brand_slug: str, category: str = ""):
+    name = (brand_name or title_from_slug(brand_slug) or "Brand").strip()
+    slug = (brand_slug or slugify_brand_name(name)).strip()
+    category = (category or "brand research").strip()
+    focus = f"{category}, competitor ads, and performance marketing"
+    audience = "marketers, founders, ecommerce operators, and growth teams researching active ads"
+    creative_angle = "long-running creatives, offer positioning, messaging hooks, and ad formats"
+    market_context = (
+        f"a competitive {category} market where active ad examples can help reveal what brands keep live"
+    )
+    headline = f"Find long-running {name} ads"
+    meta_title = f"{name} Ads | Find Long-Running Ads | RunningAds"
+    meta_description = (
+        f"Research active {name} ads across {focus}. See creative patterns and cached ad previews with RunningAds."
+    )
+    summary = (
+        f"Use RunningAds to research active {name} ads across {focus}. "
+        f"Look for {creative_angle}. Market context: {market_context}."
+    )
+    return {
+        "name": name,
+        "slug": slug,
+        "search_query": name,
+        "category": category,
+        "focus": focus,
+        "audience": audience,
+        "creative_angle": creative_angle,
+        "market_context": market_context,
+        "headline": headline,
+        "meta_title": meta_title,
+        "meta_description": meta_description,
+        "summary": summary,
+    }
+
+
+def seo_brand_row_to_dict(row):
+    defaults = build_seo_brand_defaults(row[1], row[2], category=row[4] or "")
+    return {
+        "id": row[0],
+        "name": row[1] or defaults["name"],
+        "slug": row[2] or defaults["slug"],
+        "search_query": row[3] or defaults["search_query"],
+        "category": row[4] or defaults["category"],
+        "focus": row[5] or defaults["focus"],
+        "audience": row[6] or defaults["audience"],
+        "creative_angle": row[7] or defaults["creative_angle"],
+        "market_context": row[8] or defaults["market_context"],
+        "headline": row[9] or defaults["headline"],
+        "meta_title": row[10] or defaults["meta_title"],
+        "meta_description": row[11] or defaults["meta_description"],
+        "summary": row[12] or defaults["summary"],
+        "is_published": row[13],
+        "source_candidate_id": row[14],
+        "published_at": row[15],
+    }
+
+
+def get_published_seo_brands():
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, brand_name, brand_slug, search_query, category,
+                           focus, audience, creative_angle, market_context,
+                           headline, meta_title, meta_description, summary,
+                           is_published, source_candidate_id, published_at
+                    FROM seo_brands
+                    WHERE is_published = TRUE
+                    ORDER BY brand_name ASC
+                    """
+                )
+                brands = [seo_brand_row_to_dict(row) for row in cur.fetchall()]
+                return brands or BRAND_PAGES
+    except Exception as exc:
+        print("SEO brands DB read error:", str(exc))
+        return BRAND_PAGES
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_brand_by_slug(brand_slug: str):
+    slug = (brand_slug or "").strip().lower()
+    if not slug:
+        return None
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, brand_name, brand_slug, search_query, category,
+                           focus, audience, creative_angle, market_context,
+                           headline, meta_title, meta_description, summary,
+                           is_published, source_candidate_id, published_at
+                    FROM seo_brands
+                    WHERE brand_slug = %s
+                    AND is_published = TRUE
+                    """,
+                    (slug,),
+                )
+                row = cur.fetchone()
+                if row:
+                    return seo_brand_row_to_dict(row)
+    except Exception as exc:
+        print("SEO brand lookup DB error:", str(exc))
+    finally:
+        if conn:
+            conn.close()
+
+    return get_static_brand_by_slug(slug)
+
+
+def get_related_brands(brand, limit: int = 5):
+    if not brand:
+        return []
+
+    try:
+        brands = get_published_seo_brands()
+        related = [
+            item
+            for item in brands
+            if item["slug"] != brand["slug"] and item.get("category") == brand.get("category")
+        ]
+
+        if len(related) < limit:
+            related.extend(
+                item
+                for item in brands
+                if item["slug"] != brand["slug"] and item not in related
+            )
+
+        return related[:limit]
+    except Exception as exc:
+        print("Related SEO brands error:", str(exc))
+        return get_static_related_brands(brand, limit=limit)
+
+
 def get_candidate_status_label(status: str):
     labels = {
         "qualified": "Qualified",
@@ -1041,7 +1295,8 @@ def get_seo_brand_candidate_rows():
                     SELECT id, brand_name, brand_slug, category, status,
                            result_count, preview_count, last_tested_at,
                            last_success_at, last_error, is_qualified,
-                           notes, created_at, updated_at
+                           promoted_at, published_brand_id, notes,
+                           created_at, updated_at
                     FROM seo_brand_candidates
                     ORDER BY is_qualified DESC, updated_at DESC, brand_name ASC
                     """
@@ -1064,9 +1319,11 @@ def get_seo_brand_candidate_rows():
                             "last_success_at": row[8],
                             "last_error": row[9],
                             "is_qualified": row[10],
-                            "notes": row[11],
-                            "created_at": row[12],
-                            "updated_at": row[13],
+                            "promoted_at": row[11],
+                            "published_brand_id": row[12],
+                            "notes": row[13],
+                            "created_at": row[14],
+                            "updated_at": row[15],
                         }
                     )
                 return rows
@@ -1084,7 +1341,8 @@ def get_seo_brand_candidate(candidate_id: int):
                     SELECT id, brand_name, brand_slug, category, status,
                            result_count, preview_count, last_tested_at,
                            last_success_at, last_error, is_qualified,
-                           notes, created_at, updated_at
+                           promoted_at, published_brand_id, notes,
+                           created_at, updated_at
                     FROM seo_brand_candidates
                     WHERE id = %s
                     """,
@@ -1108,9 +1366,11 @@ def get_seo_brand_candidate(candidate_id: int):
                     "last_success_at": row[8],
                     "last_error": row[9],
                     "is_qualified": row[10],
-                    "notes": row[11],
-                    "created_at": row[12],
-                    "updated_at": row[13],
+                    "promoted_at": row[11],
+                    "published_brand_id": row[12],
+                    "notes": row[13],
+                    "created_at": row[14],
+                    "updated_at": row[15],
                 }
     finally:
         conn.close()
@@ -1183,6 +1443,79 @@ def update_seo_brand_candidate_test_result(
                         candidate_id,
                     ),
                 )
+    finally:
+        conn.close()
+
+
+def promote_seo_brand_candidate(candidate):
+    defaults = build_seo_brand_defaults(
+        candidate["brand_name"],
+        candidate["brand_slug"],
+        category=candidate.get("category") or "",
+    )
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO seo_brands (
+                        brand_name, brand_slug, search_query, category, focus,
+                        audience, creative_angle, market_context, headline,
+                        meta_title, meta_description, summary, is_published,
+                        source_candidate_id, published_at, updated_at
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        TRUE, %s, NOW(), NOW()
+                    )
+                    ON CONFLICT (brand_slug)
+                    DO UPDATE SET
+                        brand_name = COALESCE(seo_brands.brand_name, EXCLUDED.brand_name),
+                        search_query = COALESCE(seo_brands.search_query, EXCLUDED.search_query),
+                        category = COALESCE(seo_brands.category, EXCLUDED.category),
+                        focus = COALESCE(seo_brands.focus, EXCLUDED.focus),
+                        audience = COALESCE(seo_brands.audience, EXCLUDED.audience),
+                        creative_angle = COALESCE(seo_brands.creative_angle, EXCLUDED.creative_angle),
+                        market_context = COALESCE(seo_brands.market_context, EXCLUDED.market_context),
+                        headline = COALESCE(seo_brands.headline, EXCLUDED.headline),
+                        meta_title = COALESCE(seo_brands.meta_title, EXCLUDED.meta_title),
+                        meta_description = COALESCE(seo_brands.meta_description, EXCLUDED.meta_description),
+                        summary = COALESCE(seo_brands.summary, EXCLUDED.summary),
+                        is_published = TRUE,
+                        source_candidate_id = COALESCE(seo_brands.source_candidate_id, EXCLUDED.source_candidate_id),
+                        published_at = COALESCE(seo_brands.published_at, NOW()),
+                        updated_at = NOW()
+                    RETURNING id
+                    """,
+                    (
+                        defaults["name"],
+                        defaults["slug"],
+                        defaults["search_query"],
+                        defaults["category"],
+                        defaults["focus"],
+                        defaults["audience"],
+                        defaults["creative_angle"],
+                        defaults["market_context"],
+                        defaults["headline"],
+                        defaults["meta_title"],
+                        defaults["meta_description"],
+                        defaults["summary"],
+                        candidate["id"],
+                    ),
+                )
+                published_brand_id = cur.fetchone()[0]
+                cur.execute(
+                    """
+                    UPDATE seo_brand_candidates
+                    SET promoted_at = COALESCE(promoted_at, NOW()),
+                        published_brand_id = %s,
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (published_brand_id, candidate["id"]),
+                )
+                return published_brand_id
     finally:
         conn.close()
 
@@ -2050,6 +2383,31 @@ def test_seo_brand_candidate(candidate_id):
     return redirect(url_for("seo_brand_candidates"))
 
 
+@app.route("/admin/seo-brand-candidates/<int:candidate_id>/promote", methods=["POST"])
+@admin_required
+def promote_seo_brand_candidate_route(candidate_id):
+    candidate = get_seo_brand_candidate(candidate_id)
+    if not candidate:
+        abort(404)
+
+    if not candidate.get("is_qualified"):
+        flash(f"{candidate['brand_name']} is not qualified yet.")
+        return redirect(url_for("seo_brand_candidates"))
+
+    if candidate.get("published_brand_id"):
+        flash(f"{candidate['brand_name']} is already promoted.")
+        return redirect(url_for("seo_brand_candidates"))
+
+    try:
+        promote_seo_brand_candidate(candidate)
+        flash(f"{candidate['brand_name']} promoted to a published SEO brand.")
+    except Exception as exc:
+        print("SEO brand promotion error:", str(exc))
+        flash(f"{candidate['brand_name']} promotion failed: {str(exc)}")
+
+    return redirect(url_for("seo_brand_candidates"))
+
+
 @app.route("/admin/seo-brand-cache/<brand_slug>/refresh", methods=["POST"])
 @admin_required
 def refresh_seo_brand_cache(brand_slug):
@@ -2305,7 +2663,7 @@ def sitemap_xml():
         },
     ]
 
-    for brand in BRAND_PAGES:
+    for brand in get_published_seo_brands():
         pages.append(
             {
                 "loc": absolute_url(f"/brand/{brand['slug']}"),
