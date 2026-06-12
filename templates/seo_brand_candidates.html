@@ -82,20 +82,21 @@
     <div class="panel">
         <h2>Automation rule</h2>
         <p class="muted">
-            Run up to 10 untested or failed candidates at a time. Score 70+ auto-publishes and caches previews,
+            Process one untested or failed candidate per click. Score 70+ auto-publishes and caches previews,
             score 50-69 goes to review, and weaker candidates are rejected.
         </p>
         <p class="muted">
-            Each run may trigger Apify cost. Testing is capped at {{ max_results }} fetched results per candidate.
+            Processes one candidate per click to avoid memory spikes and control Apify cost.
+            Testing is capped at {{ max_results }} fetched results per candidate.
         </p>
         {% if automation_settings.kill_switch_enabled %}
-            <p class="danger-note">Automation kill switch is enabled. Run next 10 will not test candidates.</p>
+            <p class="danger-note">Automation kill switch is enabled. Process next candidate will not test candidates.</p>
         {% endif %}
         {% if not automation_settings.is_enabled %}
             <p class="danger-note">SEO automation is disabled.</p>
         {% endif %}
-        <form method="post" action="{{ url_for('run_next_seo_brand_candidates') }}">
-            <button class="form-button" type="submit">Run next 10 candidates</button>
+        <form method="post" action="{{ url_for('process_next_seo_brand_candidate') }}">
+            <button class="form-button" type="submit">Process next candidate</button>
         </form>
     </div>
 </div>

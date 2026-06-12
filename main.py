@@ -1,3 +1,4 @@
+import gc
 import json
 import os
 import re
@@ -2157,8 +2158,11 @@ def promote_seo_brand_candidate(candidate):
         conn.close()
 
 
-def save_seo_brand_ads_cache(brand, ads: list, country: str = "NO"):
-    preview_count = min(len(ads), SEO_BRAND_PREVIEW_COUNT)
+def save_seo_brand_ads_cache(brand, ads: list, country: str = "NO", result_count: int | None = None):
+    ads = ads if isinstance(ads, list) else []
+    stored_ads = ads[:SEO_BRAND_PREVIEW_COUNT]
+    result_count = len(ads) if result_count is None else int(result_count or 0)
+    preview_count = min(len(stored_ads), SEO_BRAND_PREVIEW_COUNT)
     fetched_at = utcnow()
     expires_at = fetched_at + timedelta(hours=SEO_BRAND_CACHE_TTL_HOURS)
     conn = get_db_connection()
@@ -2192,8 +2196,8 @@ def save_seo_brand_ads_cache(brand, ads: list, country: str = "NO"):
                         brand["name"],
                         brand["search_query"],
                         country,
-                        json.dumps(ads),
-                        len(ads),
+                        json.dumps(stored_ads),
+                        result_count,
                         preview_count,
                         fetched_at,
                         expires_at,
@@ -3248,9 +3252,97 @@ def bulk_promote_seo_brand_candidates():
     return redirect(url_for("seo_brand_candidates"))
 
 
-@app.route("/admin/seo-brand-candidates/run-next", methods=["POST"])
-@admin_required
-def run_next_seo_brand_candidates():
+def process_one_seo_automation_candidate(candidate, settings):
+    ads = None
+    try:
+        ads = fetch_filtered_seo_brand_ads(
+            candidate["brand_name"],
+            country="NO",
+            max_results=settings["max_results_per_test"],
+        )
+
+        score, signals = calculate_seo_candidate_quality(candidate["brand_name"], ads)
+        result_count = len(ads)
+        preview_count = min(result_count, SEO_BRAND_PREVIEW_COUNT)
+
+        if preview_count == 0:
+            update_seo_brand_candidate_quality_result(
+                candidate["id"],
+                status="no_active_ads_found",
+                result_count=result_count,
+                preview_count=preview_count,
+                quality_score=score,
+                quality_status="rejected",
+                quality_signals=signals,
+            )
+            return "rejected", (
+                f"{candidate['brand_name']} rejected: no active ads found. "
+                f"Quality score {score}."
+            )
+
+        if score >= settings["auto_publish_threshold"]:
+            promote_seo_brand_candidate(candidate)
+            brand = get_brand_by_slug(candidate["brand_slug"]) or build_seo_brand_defaults(
+                candidate["brand_name"],
+                candidate["brand_slug"],
+                category=candidate.get("category") or "",
+            )
+            save_seo_brand_ads_cache(
+                brand,
+                ads,
+                country="NO",
+                result_count=result_count,
+            )
+            update_seo_brand_candidate_quality_result(
+                candidate["id"],
+                status="qualified",
+                result_count=result_count,
+                preview_count=preview_count,
+                quality_score=score,
+                quality_status="auto_published",
+                quality_signals=signals,
+                auto_published=True,
+            )
+            return "auto_published", (
+                f"{candidate['brand_name']} auto-published with score {score} "
+                f"and {preview_count} cached previews."
+            )
+
+        if score >= settings["review_threshold"]:
+            update_seo_brand_candidate_quality_result(
+                candidate["id"],
+                status="qualified",
+                result_count=result_count,
+                preview_count=preview_count,
+                quality_score=score,
+                quality_status="needs_review",
+                quality_signals=signals,
+            )
+            return "sent_to_review", (
+                f"{candidate['brand_name']} sent to review with score {score} "
+                f"and {preview_count} previews."
+            )
+
+        update_seo_brand_candidate_quality_result(
+            candidate["id"],
+            status="qualified",
+            result_count=result_count,
+            preview_count=preview_count,
+            quality_score=score,
+            quality_status="rejected",
+            quality_signals=signals,
+        )
+        return "rejected", (
+            f"{candidate['brand_name']} rejected with score {score} "
+            f"and {preview_count} previews."
+        )
+    finally:
+        if ads is not None:
+            del ads
+        gc.collect()
+
+
+def process_next_seo_brand_candidate_response():
     settings = get_seo_automation_settings()
     usage = get_seo_automation_daily_usage()
 
@@ -3264,18 +3356,18 @@ def run_next_seo_brand_candidates():
 
     remaining_tests = settings["daily_test_limit"] - usage["tests"]
     remaining_apify_runs = settings["daily_apify_run_limit"] - usage["apify_runs"]
-    run_limit = min(10, remaining_tests, remaining_apify_runs)
 
-    if run_limit <= 0:
+    if min(remaining_tests, remaining_apify_runs) <= 0:
         flash("SEO automation daily limit reached. No candidates were tested.")
         return redirect(url_for("seo_brand_candidates"))
 
-    candidates = get_next_seo_automation_candidates(run_limit)
+    candidates = get_next_seo_automation_candidates(1)
     if not candidates:
         flash("No untested or failed SEO candidates are ready for automation.")
         return redirect(url_for("seo_brand_candidates"))
 
-    run_id = create_seo_automation_run("run_next")
+    candidate = candidates[0]
+    run_id = create_seo_automation_run("process_next")
     counts = {
         "tested": 0,
         "auto_published": 0,
@@ -3283,114 +3375,55 @@ def run_next_seo_brand_candidates():
         "rejected": 0,
         "failed": 0,
     }
-    errors = []
 
-    for candidate in candidates:
+    try:
+        counts["tested"] = 1
+        outcome, message = process_one_seo_automation_candidate(candidate, settings)
+        counts[outcome] += 1
+        run_status = "completed"
+        run_error = ""
+    except Exception as exc:
+        counts["tested"] = 1
+        counts["failed"] = 1
+        run_status = "completed_with_errors"
+        run_error = f"{candidate['brand_name']}: {str(exc)}"
         try:
-            counts["tested"] += 1
-            ads = fetch_filtered_seo_brand_ads(
-                candidate["brand_name"],
-                country="NO",
-                max_results=settings["max_results_per_test"],
+            update_seo_brand_candidate_quality_result(
+                candidate["id"],
+                status="failed",
+                result_count=0,
+                preview_count=0,
+                quality_score=0,
+                quality_status="failed",
+                quality_signals={"error": str(exc)},
+                error_message=str(exc),
             )
+        except Exception as update_exc:
+            print("SEO automation candidate error save failed:", str(update_exc))
+        message = f"{candidate['brand_name']} failed: {str(exc)}"
 
-            score, signals = calculate_seo_candidate_quality(candidate["brand_name"], ads)
-            result_count = len(ads)
-            preview_count = min(result_count, SEO_BRAND_PREVIEW_COUNT)
-
-            if preview_count == 0:
-                update_seo_brand_candidate_quality_result(
-                    candidate["id"],
-                    status="no_active_ads_found",
-                    result_count=result_count,
-                    preview_count=preview_count,
-                    quality_score=score,
-                    quality_status="rejected",
-                    quality_signals=signals,
-                )
-                counts["rejected"] += 1
-                continue
-
-            if score >= settings["auto_publish_threshold"]:
-                promote_seo_brand_candidate(candidate)
-                brand = get_brand_by_slug(candidate["brand_slug"]) or build_seo_brand_defaults(
-                    candidate["brand_name"],
-                    candidate["brand_slug"],
-                    category=candidate.get("category") or "",
-                )
-                save_seo_brand_ads_cache(brand, ads, country="NO")
-                update_seo_brand_candidate_quality_result(
-                    candidate["id"],
-                    status="qualified",
-                    result_count=result_count,
-                    preview_count=preview_count,
-                    quality_score=score,
-                    quality_status="auto_published",
-                    quality_signals=signals,
-                    auto_published=True,
-                )
-                counts["auto_published"] += 1
-            elif score >= settings["review_threshold"]:
-                update_seo_brand_candidate_quality_result(
-                    candidate["id"],
-                    status="qualified",
-                    result_count=result_count,
-                    preview_count=preview_count,
-                    quality_score=score,
-                    quality_status="needs_review",
-                    quality_signals=signals,
-                )
-                counts["sent_to_review"] += 1
-            else:
-                update_seo_brand_candidate_quality_result(
-                    candidate["id"],
-                    status="qualified",
-                    result_count=result_count,
-                    preview_count=preview_count,
-                    quality_score=score,
-                    quality_status="rejected",
-                    quality_signals=signals,
-                )
-                counts["rejected"] += 1
-
-        except Exception as exc:
-            counts["failed"] += 1
-            errors.append(f"{candidate['brand_name']}: {str(exc)}")
-            try:
-                update_seo_brand_candidate_quality_result(
-                    candidate["id"],
-                    status="failed",
-                    result_count=0,
-                    preview_count=0,
-                    quality_score=0,
-                    quality_status="failed",
-                    quality_signals={"error": str(exc)},
-                    error_message=str(exc),
-                )
-            except Exception as update_exc:
-                print("SEO automation candidate error save failed:", str(update_exc))
-
-    run_status = "completed" if not errors else "completed_with_errors"
     finish_seo_automation_run(
         run_id,
         run_status,
         counts,
-        error="; ".join(errors[:3]),
+        error=run_error,
     )
 
-    message = (
-        f"SEO automation complete: {counts['tested']} tested, "
-        f"{counts['auto_published']} auto-published, "
-        f"{counts['sent_to_review']} sent to review, "
-        f"{counts['rejected']} rejected, {counts['failed']} failed."
-    )
-    if errors:
-        message += f" Errors: {'; '.join(errors[:3])}"
-        if len(errors) > 3:
-            message += f"; plus {len(errors) - 3} more."
-    flash(message)
+    flash(f"SEO automation processed one candidate. {message}")
 
     return redirect(url_for("seo_brand_candidates"))
+
+
+@app.route("/admin/seo-brand-candidates/process-next", methods=["POST"])
+@admin_required
+def process_next_seo_brand_candidate():
+    return process_next_seo_brand_candidate_response()
+
+
+@app.route("/admin/seo-brand-candidates/run-next", methods=["POST"])
+@admin_required
+def run_next_seo_brand_candidates():
+    return process_next_seo_brand_candidate_response()
 
 
 @app.route("/admin/seo-brand-cache/<brand_slug>/refresh", methods=["POST"])
