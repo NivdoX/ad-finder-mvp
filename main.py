@@ -80,6 +80,18 @@ COST_SPIKE_THRESHOLD_PERCENT = 50.0
 SEO_BRAND_CACHE_TTL_HOURS = 72
 SEO_BRAND_PREVIEW_COUNT = 3
 SEO_BRAND_REFRESH_MAX_RESULTS = 12
+SEO_CANDIDATE_TEST_COUNTRY = "US"
+SEO_CANDIDATE_TEST_MAX_RESULTS = 25
+SEO_CANDIDATE_MAX_QUERY_VARIANTS = 3
+
+SEO_CANDIDATE_QUERY_ALIASES = {
+    "mud-wtr": ["MUD\\WTR", "Mud Wtr", "MUDWTR"],
+    "se-ranking": ["SE Ranking", "seranking"],
+    "dollar-shave-club": ["Dollar Shave Club", "DollarShaveClub"],
+    "dr-squatch": ["Dr. Squatch", "Dr Squatch"],
+    "liquid-i-v": ["Liquid I.V.", "Liquid IV"],
+    "ag1": ["AG1", "Athletic Greens"],
+}
 
 PLAN_LIMITS = {
     "basic": {"monthly": 40, "daily": 5},
@@ -254,7 +266,7 @@ def ensure_schema():
                         kill_switch_enabled BOOLEAN DEFAULT TRUE,
                         daily_test_limit INTEGER DEFAULT 25,
                         daily_apify_run_limit INTEGER DEFAULT 25,
-                        max_results_per_test INTEGER DEFAULT 12,
+                        max_results_per_test INTEGER DEFAULT 25,
                         auto_publish_threshold INTEGER DEFAULT 70,
                         review_threshold INTEGER DEFAULT 50,
                         created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -276,6 +288,7 @@ def ensure_schema():
                         sent_to_review INTEGER DEFAULT 0,
                         rejected INTEGER DEFAULT 0,
                         failed INTEGER DEFAULT 0,
+                        apify_runs INTEGER DEFAULT 0,
                         error TEXT
                     );
                     """
@@ -394,7 +407,7 @@ def ensure_schema():
                 cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS kill_switch_enabled BOOLEAN DEFAULT TRUE;")
                 cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS daily_test_limit INTEGER DEFAULT 25;")
                 cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS daily_apify_run_limit INTEGER DEFAULT 25;")
-                cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS max_results_per_test INTEGER DEFAULT 12;")
+                cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS max_results_per_test INTEGER DEFAULT 25;")
                 cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS auto_publish_threshold INTEGER DEFAULT 70;")
                 cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS review_threshold INTEGER DEFAULT 50;")
                 cur.execute("ALTER TABLE seo_automation_settings ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
@@ -409,6 +422,7 @@ def ensure_schema():
                 cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS sent_to_review INTEGER DEFAULT 0;")
                 cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS rejected INTEGER DEFAULT 0;")
                 cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS failed INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS apify_runs INTEGER DEFAULT 0;")
                 cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS error TEXT;")
 
                 cur.execute(
@@ -473,7 +487,7 @@ def ensure_schema():
                         daily_apify_run_limit, max_results_per_test,
                         auto_publish_threshold, review_threshold, updated_at
                     )
-                    VALUES (1, TRUE, FALSE, 25, 25, 12, 70, 50, NOW())
+                    VALUES (1, TRUE, FALSE, 25, 25, 25, 70, 50, NOW())
                     ON CONFLICT (id) DO NOTHING;
                     """
                 )
@@ -1236,6 +1250,125 @@ def fetch_filtered_seo_brand_ads(search_query: str, country: str = "NO", max_res
     )
 
 
+def build_seo_candidate_query_variants(candidate):
+    brand_name = (candidate.get("brand_name") or "").strip()
+    brand_slug = (candidate.get("brand_slug") or slugify_brand_name(brand_name)).strip()
+    variants = []
+
+    def add_variant(value):
+        value = re.sub(r"\s+", " ", (value or "").strip())
+        if not value:
+            return
+        normalized = normalize_query(value)
+        if normalized and normalized not in {normalize_query(item) for item in variants}:
+            variants.append(value)
+
+    add_variant(brand_name)
+    add_variant(re.sub(r"[^A-Za-z0-9\s]+", " ", brand_name))
+    add_variant(title_from_slug(brand_slug))
+
+    for alias in SEO_CANDIDATE_QUERY_ALIASES.get(brand_slug, []):
+        add_variant(alias)
+
+    return variants[:SEO_CANDIDATE_MAX_QUERY_VARIANTS]
+
+
+def get_candidate_rejection_reason(diagnostics, preview_count):
+    if diagnostics.get("timed_out"):
+        return "timeout"
+    if preview_count > 0:
+        return ""
+    if diagnostics.get("raw_result_count", 0) <= 0:
+        return "no_ads_found"
+    if diagnostics.get("normalized_count", 0) <= 0:
+        return "filtered_before_relevance"
+    if diagnostics.get("relevance_filtered_count", 0) <= 0:
+        return "filtered_by_relevance"
+    return "no_preview_ads"
+
+
+def fetch_candidate_validation_ads(
+    candidate,
+    max_results: int,
+    max_variant_attempts: int,
+    country: str = SEO_CANDIDATE_TEST_COUNTRY,
+):
+    service = get_meta_ads_service()
+    relevance_filter = get_ad_relevance_filter()
+    variants = build_seo_candidate_query_variants(candidate)[:max(1, max_variant_attempts)]
+    diagnostics = {
+        "country": country,
+        "max_results": max_results,
+        "query_variants": variants,
+        "variant_results": [],
+        "apify_runs": 0,
+        "raw_result_count": 0,
+        "normalized_count": 0,
+        "relevance_filtered_count": 0,
+        "final_preview_count": 0,
+        "selected_query": None,
+        "rejection_reason": "",
+        "timed_out": False,
+    }
+    best_ads = []
+    best_variant = None
+    best_score = -1
+
+    for variant in variants:
+        diagnostics["apify_runs"] += 1
+        search_result = service.search_ads_with_diagnostics(
+            brand=variant,
+            country=country,
+            max_results=max_results,
+            include_young_ads=True,
+        )
+        normalized_ads = search_result["ads"]
+        filtered_ads = relevance_filter.filter_ads(
+            search_brand=candidate["brand_name"],
+            ads=normalized_ads,
+        )
+        preview_count = min(len(filtered_ads), SEO_BRAND_PREVIEW_COUNT)
+        variant_summary = {
+            "query": variant,
+            "raw_result_count": search_result["raw_result_count"],
+            "normalized_count": search_result["normalized_count"],
+            "relevance_filtered_count": len(filtered_ads),
+            "final_preview_count": preview_count,
+        }
+        diagnostics["variant_results"].append(variant_summary)
+
+        score = (
+            preview_count * 1000
+            + len(filtered_ads) * 100
+            + search_result["normalized_count"] * 10
+            + search_result["raw_result_count"]
+        )
+        if score > best_score:
+            best_score = score
+            best_ads = filtered_ads
+            best_variant = variant_summary
+
+        if preview_count > 0:
+            break
+
+    if best_variant:
+        diagnostics.update(
+            {
+                "raw_result_count": best_variant["raw_result_count"],
+                "normalized_count": best_variant["normalized_count"],
+                "relevance_filtered_count": best_variant["relevance_filtered_count"],
+                "final_preview_count": best_variant["final_preview_count"],
+                "selected_query": best_variant["query"],
+            }
+        )
+
+    diagnostics["rejection_reason"] = get_candidate_rejection_reason(
+        diagnostics,
+        diagnostics["final_preview_count"],
+    )
+    return best_ads, diagnostics
+
+
 def get_seo_automation_settings():
     conn = get_db_connection()
     try:
@@ -1258,7 +1391,7 @@ def get_seo_automation_settings():
                         "kill_switch_enabled": False,
                         "daily_test_limit": 25,
                         "daily_apify_run_limit": 25,
-                        "max_results_per_test": 12,
+                        "max_results_per_test": SEO_CANDIDATE_TEST_MAX_RESULTS,
                         "auto_publish_threshold": 70,
                         "review_threshold": 50,
                     }
@@ -1268,7 +1401,10 @@ def get_seo_automation_settings():
                     "kill_switch_enabled": bool(row[2]),
                     "daily_test_limit": int(row[3] or 25),
                     "daily_apify_run_limit": int(row[4] or 25),
-                    "max_results_per_test": int(row[5] or SEO_BRAND_REFRESH_MAX_RESULTS),
+                    "max_results_per_test": max(
+                        int(row[5] or SEO_CANDIDATE_TEST_MAX_RESULTS),
+                        SEO_CANDIDATE_TEST_MAX_RESULTS,
+                    ),
                     "auto_publish_threshold": int(row[6] or 70),
                     "review_threshold": int(row[7] or 50),
                 }
@@ -1289,7 +1425,8 @@ def get_seo_automation_daily_usage():
                         COALESCE(SUM(auto_published), 0),
                         COALESCE(SUM(sent_to_review), 0),
                         COALESCE(SUM(rejected), 0),
-                        COALESCE(SUM(failed), 0)
+                        COALESCE(SUM(failed), 0),
+                        COALESCE(SUM(apify_runs), 0)
                     FROM seo_automation_runs
                     WHERE started_at >= %s
                     """,
@@ -1299,7 +1436,7 @@ def get_seo_automation_daily_usage():
                 tests = int(row[0] or 0)
                 return {
                     "tests": tests,
-                    "apify_runs": tests,
+                    "apify_runs": int(row[5] or tests),
                     "auto_published": int(row[1] or 0),
                     "sent_to_review": int(row[2] or 0),
                     "rejected": int(row[3] or 0),
@@ -1342,6 +1479,7 @@ def finish_seo_automation_run(run_id: int, status: str, counts: dict, error: str
                         sent_to_review = %s,
                         rejected = %s,
                         failed = %s,
+                        apify_runs = %s,
                         error = %s
                     WHERE id = %s
                     """,
@@ -1352,6 +1490,7 @@ def finish_seo_automation_run(run_id: int, status: str, counts: dict, error: str
                         counts.get("sent_to_review", 0),
                         counts.get("rejected", 0),
                         counts.get("failed", 0),
+                        counts.get("apify_runs", counts.get("tested", 0)),
                         error[:1000] if error else None,
                         run_id,
                     ),
@@ -1380,7 +1519,7 @@ def get_next_seo_automation_candidates(limit: int):
                            rejected_at, auto_published_at, last_scored_at
                     FROM seo_brand_candidates
                     WHERE published_brand_id IS NULL
-                    AND COALESCE(quality_status, 'untested') IN ('untested', 'failed')
+                    AND COALESCE(quality_status, 'untested') IN ('untested', 'failed', 'inconclusive')
                     ORDER BY updated_at ASC, id ASC
                     LIMIT %s
                     """,
@@ -1686,6 +1825,7 @@ def get_candidate_status_label(status: str):
     labels = {
         "qualified": "Qualified",
         "no_active_ads_found": "No active ads found",
+        "inconclusive": "Search inconclusive",
         "failed": "Failed",
         "not_tested": "Not tested",
     }
@@ -1697,6 +1837,7 @@ def get_quality_status_label(status: str):
         "untested": "Untested",
         "auto_published": "Auto-published",
         "needs_review": "Needs review",
+        "inconclusive": "Search inconclusive",
         "rejected": "Rejected",
         "failed": "Failed",
     }
@@ -3059,11 +3200,16 @@ def test_seo_brand_candidate(candidate_id):
         abort(404)
 
     try:
-        ads = fetch_filtered_seo_brand_ads(candidate["brand_name"], country="NO")
+        ads, diagnostics = fetch_candidate_validation_ads(
+            candidate,
+            max_results=SEO_CANDIDATE_TEST_MAX_RESULTS,
+            max_variant_attempts=SEO_CANDIDATE_MAX_QUERY_VARIANTS,
+        )
         score, signals = calculate_seo_candidate_quality(candidate["brand_name"], ads)
+        signals["diagnostics"] = diagnostics
         preview_count = min(len(ads), SEO_BRAND_PREVIEW_COUNT)
-        status = "qualified" if preview_count > 0 else "no_active_ads_found"
-        quality_status = "needs_review" if preview_count > 0 else "rejected"
+        status = "qualified" if preview_count > 0 else "inconclusive"
+        quality_status = "needs_review" if preview_count > 0 else "inconclusive"
         update_seo_brand_candidate_quality_result(
             candidate_id,
             status=status,
@@ -3080,10 +3226,14 @@ def test_seo_brand_candidate(candidate_id):
                 f"and a quality score of {score}."
             )
         else:
-            flash(f"{candidate['brand_name']} tested: no active ads found.")
+            flash(
+                f"{candidate['brand_name']} search inconclusive: "
+                f"{diagnostics['rejection_reason']}."
+            )
 
     except MetaAdsServiceError as exc:
         error_message = str(exc)
+        timed_out = "timed out" in error_message.lower()
         update_seo_brand_candidate_quality_result(
             candidate_id,
             status="failed",
@@ -3091,7 +3241,14 @@ def test_seo_brand_candidate(candidate_id):
             preview_count=0,
             quality_score=0,
             quality_status="failed",
-            quality_signals={"error": error_message},
+            quality_signals={
+                "error": error_message,
+                "diagnostics": {
+                    "country": SEO_CANDIDATE_TEST_COUNTRY,
+                    "timed_out": timed_out,
+                    "rejection_reason": "timeout" if timed_out else "search_error",
+                },
+            },
             error_message=error_message,
         )
         flash(f"{candidate['brand_name']} test failed: {error_message}")
@@ -3106,7 +3263,14 @@ def test_seo_brand_candidate(candidate_id):
             preview_count=0,
             quality_score=0,
             quality_status="failed",
-            quality_signals={"error": error_message},
+            quality_signals={
+                "error": error_message,
+                "diagnostics": {
+                    "country": SEO_CANDIDATE_TEST_COUNTRY,
+                    "timed_out": False,
+                    "rejection_reason": "search_error",
+                },
+            },
             error_message=error_message,
         )
         flash(f"{candidate['brand_name']} test failed: {error_message}")
@@ -3252,33 +3416,34 @@ def bulk_promote_seo_brand_candidates():
     return redirect(url_for("seo_brand_candidates"))
 
 
-def process_one_seo_automation_candidate(candidate, settings):
+def process_one_seo_automation_candidate(candidate, settings, max_variant_attempts: int):
     ads = None
     try:
-        ads = fetch_filtered_seo_brand_ads(
-            candidate["brand_name"],
-            country="NO",
+        ads, diagnostics = fetch_candidate_validation_ads(
+            candidate,
             max_results=settings["max_results_per_test"],
+            max_variant_attempts=max_variant_attempts,
         )
 
         score, signals = calculate_seo_candidate_quality(candidate["brand_name"], ads)
+        signals["diagnostics"] = diagnostics
         result_count = len(ads)
         preview_count = min(result_count, SEO_BRAND_PREVIEW_COUNT)
 
         if preview_count == 0:
             update_seo_brand_candidate_quality_result(
                 candidate["id"],
-                status="no_active_ads_found",
+                status="inconclusive",
                 result_count=result_count,
                 preview_count=preview_count,
                 quality_score=score,
-                quality_status="rejected",
+                quality_status="inconclusive",
                 quality_signals=signals,
             )
-            return "rejected", (
-                f"{candidate['brand_name']} rejected: no active ads found. "
-                f"Quality score {score}."
-            )
+            return "inconclusive", (
+                f"{candidate['brand_name']} search inconclusive: "
+                f"{diagnostics['rejection_reason']}. Quality score {score}."
+            ), diagnostics
 
         if score >= settings["auto_publish_threshold"]:
             promote_seo_brand_candidate(candidate)
@@ -3290,7 +3455,7 @@ def process_one_seo_automation_candidate(candidate, settings):
             save_seo_brand_ads_cache(
                 brand,
                 ads,
-                country="NO",
+                country=SEO_CANDIDATE_TEST_COUNTRY,
                 result_count=result_count,
             )
             update_seo_brand_candidate_quality_result(
@@ -3306,7 +3471,7 @@ def process_one_seo_automation_candidate(candidate, settings):
             return "auto_published", (
                 f"{candidate['brand_name']} auto-published with score {score} "
                 f"and {preview_count} cached previews."
-            )
+            ), diagnostics
 
         if score >= settings["review_threshold"]:
             update_seo_brand_candidate_quality_result(
@@ -3321,7 +3486,7 @@ def process_one_seo_automation_candidate(candidate, settings):
             return "sent_to_review", (
                 f"{candidate['brand_name']} sent to review with score {score} "
                 f"and {preview_count} previews."
-            )
+            ), diagnostics
 
         update_seo_brand_candidate_quality_result(
             candidate["id"],
@@ -3335,7 +3500,7 @@ def process_one_seo_automation_candidate(candidate, settings):
         return "rejected", (
             f"{candidate['brand_name']} rejected with score {score} "
             f"and {preview_count} previews."
-        )
+        ), diagnostics
     finally:
         if ads is not None:
             del ads
@@ -3374,19 +3539,33 @@ def process_next_seo_brand_candidate_response():
         "sent_to_review": 0,
         "rejected": 0,
         "failed": 0,
+        "inconclusive": 0,
+        "apify_runs": 0,
     }
 
     try:
         counts["tested"] = 1
-        outcome, message = process_one_seo_automation_candidate(candidate, settings)
-        counts[outcome] += 1
+        max_variant_attempts = min(
+            SEO_CANDIDATE_MAX_QUERY_VARIANTS,
+            max(1, remaining_apify_runs),
+        )
+        outcome, message, diagnostics = process_one_seo_automation_candidate(
+            candidate,
+            settings,
+            max_variant_attempts=max_variant_attempts,
+        )
+        if outcome in counts:
+            counts[outcome] += 1
+        counts["apify_runs"] = int(diagnostics.get("apify_runs") or 1)
         run_status = "completed"
         run_error = ""
     except Exception as exc:
         counts["tested"] = 1
         counts["failed"] = 1
+        counts["apify_runs"] = 1
         run_status = "completed_with_errors"
         run_error = f"{candidate['brand_name']}: {str(exc)}"
+        timed_out = "timed out" in str(exc).lower()
         try:
             update_seo_brand_candidate_quality_result(
                 candidate["id"],
@@ -3395,7 +3574,14 @@ def process_next_seo_brand_candidate_response():
                 preview_count=0,
                 quality_score=0,
                 quality_status="failed",
-                quality_signals={"error": str(exc)},
+                quality_signals={
+                    "error": str(exc),
+                    "diagnostics": {
+                        "country": SEO_CANDIDATE_TEST_COUNTRY,
+                        "timed_out": timed_out,
+                        "rejection_reason": "timeout" if timed_out else "search_error",
+                    },
+                },
                 error_message=str(exc),
             )
         except Exception as update_exc:

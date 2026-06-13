@@ -33,6 +33,19 @@ class MetaAdsService:
         }
 
     def search_ads(self, brand: str, country: str, max_results: int = 50) -> List[Dict[str, Any]]:
+        return self.search_ads_with_diagnostics(
+            brand=brand,
+            country=country,
+            max_results=max_results,
+        )["ads"]
+
+    def search_ads_with_diagnostics(
+        self,
+        brand: str,
+        country: str,
+        max_results: int = 50,
+        include_young_ads: bool = False,
+    ) -> Dict[str, Any]:
         if not self.apify_token:
             raise MetaAdsServiceError("APIFY_TOKEN is missing.")
 
@@ -90,7 +103,11 @@ class MetaAdsService:
 
         normalized: List[Dict[str, Any]] = []
         for item in raw_items:
-            normalized_item = self._normalize_item(item, brand)
+            normalized_item = self._normalize_item(
+                item,
+                brand,
+                include_young_ads=include_young_ads,
+            )
             if normalized_item:
                 normalized.append(normalized_item)
 
@@ -109,9 +126,22 @@ class MetaAdsService:
                 seen_ids.add(ad_id)
             deduped.append(ad)
 
-        return deduped
+        return {
+            "ads": deduped,
+            "raw_result_count": len(raw_items),
+            "normalized_count": len(deduped),
+            "pre_dedupe_count": len(normalized),
+            "query": brand,
+            "country": country,
+            "max_results": max_results,
+        }
 
-    def _normalize_item(self, item: Dict[str, Any], brand: str) -> Optional[Dict[str, Any]]:
+    def _normalize_item(
+        self,
+        item: Dict[str, Any],
+        brand: str,
+        include_young_ads: bool = False,
+    ) -> Optional[Dict[str, Any]]:
         is_active = self._extract_is_active(item)
         if is_active is False:
             return None
@@ -152,7 +182,7 @@ class MetaAdsService:
 
         days_running = max(0, (datetime.now(timezone.utc) - start_dt).days)
 
-        if days_running < 7:
+        if days_running < 7 and not include_young_ads:
             return None
 
         ad_text = self._clean_text(
