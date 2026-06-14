@@ -77,6 +77,7 @@ ABUSE_BLOCK_AFTER = 18
 COST_PER_SEARCH_ALERT_THRESHOLD = 0.08
 CACHE_RATE_ALERT_THRESHOLD = 40.0
 COST_SPIKE_THRESHOLD_PERCENT = 50.0
+PUBLIC_SEARCH_COUNTRY = "US"
 SEO_BRAND_CACHE_TTL_HOURS = 72
 SEO_BRAND_PREVIEW_COUNT = 3
 SEO_BRAND_REFRESH_MAX_RESULTS = 12
@@ -989,7 +990,13 @@ def record_search(
         conn.close()
 
 
-def get_cached_results(normalized_query: str):
+def build_public_search_cache_key(normalized_query: str, country: str) -> str:
+    normalized_country = (country or "").strip().upper() or PUBLIC_SEARCH_COUNTRY
+    return f"{normalized_country.lower()}:{normalized_query}"
+
+
+def get_cached_results(normalized_query: str, country: str):
+    cache_key = build_public_search_cache_key(normalized_query, country)
     conn = get_db_connection()
     try:
         with conn:
@@ -1001,7 +1008,7 @@ def get_cached_results(normalized_query: str):
                     WHERE query_normalized = %s
                     AND expires_at > NOW()
                     """,
-                    (normalized_query,),
+                    (cache_key,),
                 )
                 row = cur.fetchone()
                 if not row:
@@ -1011,7 +1018,8 @@ def get_cached_results(normalized_query: str):
         conn.close()
 
 
-def save_cached_results(query_original: str, normalized_query: str, results: list):
+def save_cached_results(query_original: str, normalized_query: str, results: list, country: str):
+    cache_key = build_public_search_cache_key(normalized_query, country)
     expires_at = utcnow() + timedelta(hours=CACHE_TTL_HOURS)
     conn = get_db_connection()
     try:
@@ -1032,7 +1040,7 @@ def save_cached_results(query_original: str, normalized_query: str, results: lis
                         expires_at = EXCLUDED.expires_at
                     """,
                     (
-                        normalized_query,
+                        cache_key,
                         query_original,
                         json.dumps(results),
                         len(results),
@@ -2778,9 +2786,10 @@ def index():
 
         searched = True
         normalized = normalize_query(brand)
+        search_country = PUBLIC_SEARCH_COUNTRY
 
         try:
-            cached = get_cached_results(normalized)
+            cached = get_cached_results(normalized, country=search_country)
             is_cached = cached is not None
 
             if is_cached:
@@ -2790,7 +2799,7 @@ def index():
                 service = get_meta_ads_service()
                 ads = service.search_ads(
                     brand=brand,
-                    country="NO",
+                    country=search_country,
                     max_results=50,
                 )
 
@@ -2800,7 +2809,7 @@ def index():
                     ads=ads,
                 )
 
-                save_cached_results(brand, normalized, ads)
+                save_cached_results(brand, normalized, ads, country=search_country)
                 estimated_cost = FRESH_SEARCH_ESTIMATED_COST
 
             if user and can_user_search(user)["allowed"]:
