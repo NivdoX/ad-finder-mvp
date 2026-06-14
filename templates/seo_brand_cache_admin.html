@@ -9,11 +9,17 @@
         <p class="muted">
             Refresh cached ad previews for public brand pages. Public pages only read from this cache.
         </p>
+        <p class="muted">
+            Stale refresh processes up to 5 eligible brands per click using the US candidate-style refresh path.
+        </p>
         <p>
             <a class="topbar-btn primary" href="{{ url_for('seo_brand_candidates') }}">Test candidate brand</a>
             <a class="topbar-btn" href="{{ url_for('seo_market_audit') }}">Market audit</a>
             <a class="topbar-btn" href="{{ url_for('admin') }}">Back to admin</a>
         </p>
+        <form method="post" action="{{ url_for('refresh_stale_seo_brand_cache') }}">
+            <button class="form-button" type="submit">Refresh stale SEO caches</button>
+        </form>
     </div>
 </div>
 
@@ -54,6 +60,7 @@
                     <th>Slug</th>
                     <th>Status</th>
                     <th>Previews</th>
+                    <th>Country</th>
                     <th>Fetched</th>
                     <th>Expires</th>
                     <th>Last error</th>
@@ -78,6 +85,7 @@
                                 -
                             {% endif %}
                         </td>
+                        <td>{{ row.country or '-' }}</td>
                         <td>{{ row.fetched_at or '-' }}</td>
                         <td>{{ row.expires_at or '-' }}</td>
                         <td>

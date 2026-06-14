@@ -81,6 +81,7 @@ PUBLIC_SEARCH_COUNTRY = "US"
 SEO_BRAND_CACHE_TTL_HOURS = 72
 SEO_BRAND_PREVIEW_COUNT = 3
 SEO_BRAND_REFRESH_MAX_RESULTS = 12
+SEO_STALE_CACHE_REFRESH_LIMIT = 5
 SEO_CANDIDATE_TEST_COUNTRY = "US"
 SEO_CANDIDATE_TEST_MAX_RESULTS = 25
 SEO_CANDIDATE_MAX_QUERY_VARIANTS = 3
@@ -1158,7 +1159,7 @@ def get_cached_seo_brand_ads(brand_slug: str, fallback_brand_name: str = ""):
             conn.close()
 
 
-def get_seo_brand_cache_admin_rows():
+def get_seo_brand_cache_by_slug():
     cache_by_slug = {}
     conn = get_db_connection()
     try:
@@ -1167,7 +1168,7 @@ def get_seo_brand_cache_admin_rows():
                 cur.execute(
                     """
                     SELECT brand_slug, refresh_status, result_count, preview_count,
-                           fetched_at, expires_at, last_error
+                           fetched_at, expires_at, last_error, country, updated_at
                     FROM seo_brand_ad_cache
                     """
                 )
@@ -1179,10 +1180,16 @@ def get_seo_brand_cache_admin_rows():
                         "fetched_at": row[4],
                         "expires_at": row[5],
                         "last_error": row[6],
+                        "country": row[7],
+                        "updated_at": row[8],
                     }
     finally:
         conn.close()
+    return cache_by_slug
 
+
+def get_seo_brand_cache_admin_rows():
+    cache_by_slug = get_seo_brand_cache_by_slug()
     published_brands = get_published_seo_brands()
     rows = []
     summary = {
@@ -1201,21 +1208,15 @@ def get_seo_brand_cache_admin_rows():
         expires_at = cached.get("expires_at")
         is_expired = bool(expires_at and expires_at < now)
 
-        if raw_status == "failed":
-            display_status = "Failed"
-            status_key = "failed"
+        display_status, status_key = get_cache_status_display(raw_status, preview_count)
+
+        if status_key == "failed":
             summary["failed"] += 1
-        elif not raw_status:
-            display_status = "Not refreshed"
-            status_key = "not_refreshed"
+        elif status_key == "not_refreshed":
             summary["not_refreshed"] += 1
-        elif preview_count > 0:
-            display_status = "Preview available"
-            status_key = "preview_available"
+        elif status_key == "preview_available":
             summary["with_previews"] += 1
         else:
-            display_status = "No active ads found"
-            status_key = "no_active_ads"
             summary["no_active_ads"] += 1
 
         rows.append(
@@ -1228,8 +1229,10 @@ def get_seo_brand_cache_admin_rows():
                 "is_expired": is_expired,
                 "result_count": cached.get("result_count"),
                 "preview_count": preview_count if raw_status else None,
+                "country": cached.get("country"),
                 "fetched_at": cached.get("fetched_at"),
                 "expires_at": expires_at,
+                "updated_at": cached.get("updated_at"),
                 "last_error": cached.get("last_error"),
             }
         )
@@ -2006,6 +2009,33 @@ def get_quality_status_label(status: str):
     return labels.get(status or "untested", "Untested")
 
 
+def get_candidate_sort_options():
+    return [
+        {"key": "qualified_first", "label": "Qualified first"},
+        {"key": "alpha", "label": "Alphabetical A to Z"},
+        {"key": "published_first", "label": "Published first"},
+        {"key": "unpublished_first", "label": "Unpublished first"},
+        {"key": "inconclusive_first", "label": "Inconclusive first"},
+        {"key": "needs_review_first", "label": "Needs review first"},
+        {"key": "rejected_failed_first", "label": "Rejected/failed first"},
+    ]
+
+
+def normalize_candidate_sort(value: str):
+    allowed = {item["key"] for item in get_candidate_sort_options()}
+    return value if value in allowed else "qualified_first"
+
+
+def get_cache_status_display(raw_status, preview_count: int):
+    if raw_status == "failed":
+        return "Failed", "failed"
+    if not raw_status:
+        return "Not refreshed", "not_refreshed"
+    if preview_count > 0:
+        return "Preview available", "preview_available"
+    return "No active ads found", "no_active_ads"
+
+
 def seo_brand_candidate_row_to_dict(row):
     status = row[4] or "not_tested"
     quality_status = row[17] or "untested"
@@ -2041,7 +2071,67 @@ def seo_brand_candidate_row_to_dict(row):
     }
 
 
-def get_seo_brand_candidate_rows():
+def apply_candidate_sort(rows, sort_key: str):
+    sort_key = normalize_candidate_sort(sort_key)
+
+    def name_key(row):
+        return (row.get("brand_name") or "").lower()
+
+    if sort_key == "alpha":
+        return sorted(rows, key=name_key)
+    if sort_key == "published_first":
+        return sorted(rows, key=lambda row: (not bool(row.get("published_brand_id")), name_key(row)))
+    if sort_key == "unpublished_first":
+        return sorted(rows, key=lambda row: (bool(row.get("published_brand_id")), name_key(row)))
+    if sort_key == "inconclusive_first":
+        return sorted(
+            rows,
+            key=lambda row: (
+                row.get("quality_status") != "inconclusive" and row.get("status") != "inconclusive",
+                name_key(row),
+            ),
+        )
+    if sort_key == "needs_review_first":
+        return sorted(rows, key=lambda row: (row.get("quality_status") != "needs_review", name_key(row)))
+    if sort_key == "rejected_failed_first":
+        return sorted(
+            rows,
+            key=lambda row: (
+                row.get("quality_status") not in ("rejected", "failed") and row.get("status") != "failed",
+                name_key(row),
+            ),
+        )
+
+    return sorted(rows, key=lambda row: (not bool(row.get("is_qualified")), name_key(row)))
+
+
+def attach_cache_status_to_candidates(rows):
+    cache_by_slug = get_seo_brand_cache_by_slug()
+    enriched_rows = []
+    for row in rows:
+        candidate = dict(row)
+        cached = cache_by_slug.get(candidate["brand_slug"], {})
+        preview_count = int(cached.get("preview_count") or 0)
+        raw_status = cached.get("refresh_status")
+        display_status, status_key = get_cache_status_display(raw_status, preview_count)
+        candidate.update(
+            {
+                "cache_refresh_status": raw_status,
+                "cache_status_label": display_status,
+                "cache_status_key": status_key,
+                "cache_preview_count": preview_count if raw_status else None,
+                "cache_country": cached.get("country"),
+                "cache_updated_at": cached.get("updated_at"),
+                "cache_fetched_at": cached.get("fetched_at"),
+                "cache_expires_at": cached.get("expires_at"),
+                "cache_last_error": cached.get("last_error"),
+            }
+        )
+        enriched_rows.append(candidate)
+    return enriched_rows
+
+
+def get_seo_brand_candidate_rows(sort_key: str = "qualified_first"):
     conn = get_db_connection()
     try:
         with conn:
@@ -2060,7 +2150,9 @@ def get_seo_brand_candidate_rows():
                     ORDER BY is_qualified DESC, updated_at DESC, brand_name ASC
                     """
                 )
-                return [seo_brand_candidate_row_to_dict(row) for row in cur.fetchall()]
+                rows = [seo_brand_candidate_row_to_dict(row) for row in cur.fetchall()]
+                rows = attach_cache_status_to_candidates(rows)
+                return apply_candidate_sort(rows, sort_key)
     finally:
         conn.close()
 
@@ -2644,6 +2736,107 @@ def refresh_seo_brand_ads_cache_for_candidate(brand, candidate=None):
         "preview_count": preview_count,
         "diagnostics": diagnostics,
     }
+
+
+def is_stale_seo_cache_row(cached, now):
+    if not cached:
+        return True
+
+    preview_count = int(cached.get("preview_count") or 0)
+    country = (cached.get("country") or "").upper()
+    refresh_status = cached.get("refresh_status")
+    fetched_at = cached.get("fetched_at")
+    expires_at = cached.get("expires_at")
+    updated_at = cached.get("updated_at")
+    is_older_than_ttl = bool(fetched_at and fetched_at < now - timedelta(hours=SEO_BRAND_CACHE_TTL_HOURS))
+    is_expired = bool(expires_at and expires_at < now)
+    recently_attempted = bool(updated_at and updated_at >= now - timedelta(hours=SEO_BRAND_CACHE_TTL_HOURS))
+
+    if preview_count == 0 or country != SEO_CANDIDATE_TEST_COUNTRY:
+        return True
+
+    if refresh_status == "no_results_preserved" and recently_attempted:
+        return False
+
+    return (
+        is_older_than_ttl
+        or is_expired
+        or refresh_status != "success"
+    )
+
+
+def get_stale_seo_cache_refresh_targets(limit: int = SEO_STALE_CACHE_REFRESH_LIMIT):
+    published_brands = get_published_seo_brands()
+    cache_by_slug = get_seo_brand_cache_by_slug()
+    now = utcnow()
+    targets = []
+
+    for brand in published_brands:
+        cached = cache_by_slug.get(brand["slug"])
+        if is_stale_seo_cache_row(cached, now):
+            targets.append(
+                {
+                    "brand": brand,
+                    "cache": cached or {},
+                }
+            )
+
+    return {
+        "brands_checked": len(published_brands),
+        "eligible_count": len(targets),
+        "targets": targets[:limit],
+        "limit": limit,
+    }
+
+
+def refresh_stale_seo_brand_caches(limit: int = SEO_STALE_CACHE_REFRESH_LIMIT):
+    target_data = get_stale_seo_cache_refresh_targets(limit=limit)
+    summary = {
+        "brands_checked": target_data["brands_checked"],
+        "eligible_count": target_data["eligible_count"],
+        "brands_refreshed": 0,
+        "brands_updated_with_previews": 0,
+        "brands_preserved": 0,
+        "brands_no_previews": 0,
+        "brands_failed": 0,
+        "timeouts": 0,
+        "limit": target_data["limit"],
+        "errors": [],
+    }
+
+    for target in target_data["targets"]:
+        brand = target["brand"]
+        cached = target["cache"]
+        existing_preview_count = int(cached.get("preview_count") or 0)
+        try:
+            refresh_result = refresh_seo_brand_ads_cache_for_candidate(brand)
+            summary["brands_refreshed"] += 1
+            if int(refresh_result.get("preview_count") or 0) > 0:
+                summary["brands_updated_with_previews"] += 1
+            elif existing_preview_count > 0:
+                summary["brands_preserved"] += 1
+            else:
+                summary["brands_no_previews"] += 1
+        except MetaAdsServiceError as exc:
+            error_message = str(exc)
+            summary["brands_failed"] += 1
+            if "timed out" in error_message.lower():
+                summary["timeouts"] += 1
+            summary["errors"].append(f"{brand['name']}: {error_message}")
+            try:
+                save_seo_brand_cache_error(brand, error_message, country=SEO_CANDIDATE_TEST_COUNTRY)
+            except Exception as save_exc:
+                print("SEO stale cache error save failed:", str(save_exc))
+        except Exception as exc:
+            error_message = str(exc)
+            summary["brands_failed"] += 1
+            summary["errors"].append(f"{brand['name']}: {error_message}")
+            try:
+                save_seo_brand_cache_error(brand, error_message, country=SEO_CANDIDATE_TEST_COUNTRY)
+            except Exception as save_exc:
+                print("SEO stale cache error save failed:", str(save_exc))
+
+    return summary
 
 
 def create_alert(alert_key: str, alert_type: str, severity: str, message: str):
@@ -3595,13 +3788,16 @@ def seo_brand_candidates():
             except Exception as exc:
                 flash(f"Could not save candidate: {str(exc)}")
 
-    candidate_rows = get_seo_brand_candidate_rows()
+    selected_sort = normalize_candidate_sort(request.args.get("sort") or "qualified_first")
+    candidate_rows = get_seo_brand_candidate_rows(sort_key=selected_sort)
     automation_settings = get_seo_automation_settings()
     automation_usage = get_seo_automation_daily_usage()
 
     return render_template(
         "seo_brand_candidates.html",
         candidate_rows=candidate_rows,
+        sort_options=get_candidate_sort_options(),
+        selected_sort=selected_sort,
         max_results=automation_settings["max_results_per_test"],
         automation_settings=automation_settings,
         automation_usage=automation_usage,
@@ -4151,6 +4347,31 @@ def refresh_seo_brand_cache(brand_slug):
                 "error": error_message,
             }
         ), 500
+
+
+@app.route("/admin/seo-brand-cache/refresh-stale", methods=["POST"])
+@admin_required
+def refresh_stale_seo_brand_cache():
+    try:
+        summary = refresh_stale_seo_brand_caches()
+        message = (
+            f"Stale SEO cache refresh complete. Checked {summary['brands_checked']} brands, "
+            f"eligible {summary['eligible_count']}, refreshed {summary['brands_refreshed']} "
+            f"(limit {summary['limit']} per click), updated with previews "
+            f"{summary['brands_updated_with_previews']}, preserved {summary['brands_preserved']}, "
+            f"failed {summary['brands_failed']}, timeouts {summary['timeouts']}."
+        )
+        if summary["brands_no_previews"]:
+            message += f" No previews found for {summary['brands_no_previews']}."
+        if summary["errors"]:
+            message += f" Errors: {'; '.join(summary['errors'][:3])}"
+            if len(summary["errors"]) > 3:
+                message += f"; plus {len(summary['errors']) - 3} more."
+        flash(message)
+    except Exception as exc:
+        flash(f"Stale SEO cache refresh failed: {str(exc)}")
+
+    return redirect(url_for("seo_brand_cache_admin"))
 
 
 @app.route("/stripe-webhook", methods=["POST"])

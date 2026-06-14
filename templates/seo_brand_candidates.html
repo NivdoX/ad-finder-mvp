@@ -19,6 +19,18 @@
             <a class="topbar-btn" href="{{ url_for('seo_brand_cache_admin') }}">Back to SEO cache</a>
             <a class="topbar-btn" href="{{ url_for('admin') }}">Back to admin</a>
         </p>
+        <form method="get" class="stack" style="max-width:360px;">
+            <label>
+                <span class="field-label">Sort candidates</span>
+                <select class="form-input" name="sort" onchange="this.form.submit()">
+                    {% for option in sort_options %}
+                        <option value="{{ option.key }}" {% if option.key == selected_sort %}selected{% endif %}>
+                            {{ option.label }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </label>
+        </form>
     </div>
 </div>
 
@@ -157,6 +169,7 @@
                     <th>Last tested</th>
                     <th>Qualified</th>
                     <th>Published</th>
+                    <th>SEO cache</th>
                     <th>Last error</th>
                     <th>Notes</th>
                     <th>Actions</th>
@@ -228,8 +241,24 @@
                             {% endif %}
                         </td>
                         <td>
+                            {% if row.published_brand_id %}
+                                <span class="pill cache-status {{ row.cache_status_key }}">{{ row.cache_status_label }}</span>
+                                <div>{{ row.cache_preview_count if row.cache_preview_count is not none else 0 }} previews</div>
+                                <div class="muted">
+                                    {{ row.cache_country or 'No country' }}
+                                    {% if row.cache_updated_at %}
+                                        - {{ row.cache_updated_at }}
+                                    {% endif %}
+                                </div>
+                            {% else %}
+                                <span class="muted">Not published</span>
+                            {% endif %}
+                        </td>
+                        <td>
                             {% if row.last_error %}
                                 <span class="danger-note">{{ row.last_error|truncate(120, True) }}</span>
+                            {% elif row.cache_last_error and row.published_brand_id %}
+                                <span class="danger-note">{{ row.cache_last_error|truncate(120, True) }}</span>
                             {% else %}
                                 -
                             {% endif %}
@@ -248,7 +277,7 @@
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="15">
+                        <td colspan="16">
                             <span class="muted">No candidates added yet.</span>
                         </td>
                     </tr>
