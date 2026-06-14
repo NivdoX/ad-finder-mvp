@@ -2324,14 +2324,78 @@ def save_seo_brand_ads_cache(brand, ads: list, country: str = "NO", result_count
                     DO UPDATE SET
                         brand_name = EXCLUDED.brand_name,
                         search_query = EXCLUDED.search_query,
-                        country = EXCLUDED.country,
-                        ads_json = EXCLUDED.ads_json,
-                        result_count = EXCLUDED.result_count,
-                        preview_count = EXCLUDED.preview_count,
-                        fetched_at = EXCLUDED.fetched_at,
-                        expires_at = EXCLUDED.expires_at,
-                        refresh_status = 'success',
-                        last_error = NULL,
+                        country = CASE
+                            WHEN EXCLUDED.preview_count = 0
+                                AND (
+                                    COALESCE(seo_brand_ad_cache.preview_count, 0) > 0
+                                    OR COALESCE(NULLIF(BTRIM(seo_brand_ad_cache.ads_json), ''), '[]') <> '[]'
+                                )
+                            THEN seo_brand_ad_cache.country
+                            ELSE EXCLUDED.country
+                        END,
+                        ads_json = CASE
+                            WHEN EXCLUDED.preview_count = 0
+                                AND (
+                                    COALESCE(seo_brand_ad_cache.preview_count, 0) > 0
+                                    OR COALESCE(NULLIF(BTRIM(seo_brand_ad_cache.ads_json), ''), '[]') <> '[]'
+                                )
+                            THEN seo_brand_ad_cache.ads_json
+                            ELSE EXCLUDED.ads_json
+                        END,
+                        result_count = CASE
+                            WHEN EXCLUDED.preview_count = 0
+                                AND (
+                                    COALESCE(seo_brand_ad_cache.preview_count, 0) > 0
+                                    OR COALESCE(NULLIF(BTRIM(seo_brand_ad_cache.ads_json), ''), '[]') <> '[]'
+                                )
+                            THEN seo_brand_ad_cache.result_count
+                            ELSE EXCLUDED.result_count
+                        END,
+                        preview_count = CASE
+                            WHEN EXCLUDED.preview_count = 0
+                                AND (
+                                    COALESCE(seo_brand_ad_cache.preview_count, 0) > 0
+                                    OR COALESCE(NULLIF(BTRIM(seo_brand_ad_cache.ads_json), ''), '[]') <> '[]'
+                                )
+                            THEN seo_brand_ad_cache.preview_count
+                            ELSE EXCLUDED.preview_count
+                        END,
+                        fetched_at = CASE
+                            WHEN EXCLUDED.preview_count = 0
+                                AND (
+                                    COALESCE(seo_brand_ad_cache.preview_count, 0) > 0
+                                    OR COALESCE(NULLIF(BTRIM(seo_brand_ad_cache.ads_json), ''), '[]') <> '[]'
+                                )
+                            THEN seo_brand_ad_cache.fetched_at
+                            ELSE EXCLUDED.fetched_at
+                        END,
+                        expires_at = CASE
+                            WHEN EXCLUDED.preview_count = 0
+                                AND (
+                                    COALESCE(seo_brand_ad_cache.preview_count, 0) > 0
+                                    OR COALESCE(NULLIF(BTRIM(seo_brand_ad_cache.ads_json), ''), '[]') <> '[]'
+                                )
+                            THEN seo_brand_ad_cache.expires_at
+                            ELSE EXCLUDED.expires_at
+                        END,
+                        refresh_status = CASE
+                            WHEN EXCLUDED.preview_count = 0
+                                AND (
+                                    COALESCE(seo_brand_ad_cache.preview_count, 0) > 0
+                                    OR COALESCE(NULLIF(BTRIM(seo_brand_ad_cache.ads_json), ''), '[]') <> '[]'
+                                )
+                            THEN 'no_results_preserved'
+                            ELSE 'success'
+                        END,
+                        last_error = CASE
+                            WHEN EXCLUDED.preview_count = 0
+                                AND (
+                                    COALESCE(seo_brand_ad_cache.preview_count, 0) > 0
+                                    OR COALESCE(NULLIF(BTRIM(seo_brand_ad_cache.ads_json), ''), '[]') <> '[]'
+                                )
+                            THEN 'Refresh returned 0 preview ads; existing cached previews were preserved.'
+                            ELSE NULL
+                        END,
                         updated_at = NOW()
                     """,
                     (
