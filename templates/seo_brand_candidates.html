@@ -30,6 +30,16 @@
                     {% endfor %}
                 </select>
             </label>
+            <label>
+                <span class="field-label">Show</span>
+                <select class="form-input" name="view" onchange="this.form.submit()">
+                    {% for option in view_options %}
+                        <option value="{{ option.key }}" {% if option.key == selected_view %}selected{% endif %}>
+                            {{ option.label }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </label>
         </form>
     </div>
 </div>
@@ -146,9 +156,18 @@
     <div class="panel">
         <h2>Tracked candidates</h2>
         <form id="bulk-promote-form" method="post" action="{{ url_for('bulk_promote_seo_brand_candidates') }}"></form>
+        <form id="bulk-delete-candidates-form" method="post" action="{{ url_for('bulk_delete_seo_brand_candidates_route') }}"></form>
         <p>
             <button class="secondary-button" type="submit" form="bulk-promote-form">
                 Promote selected to SEO brands
+            </button>
+            <button
+                class="secondary-button"
+                type="submit"
+                form="bulk-delete-candidates-form"
+                onclick="return confirm('Delete selected candidate records? Published SEO brands and cache rows will not be deleted.');"
+            >
+                Delete selected candidates
             </button>
         </p>
         <form method="post" action="{{ url_for('backfill_seo_candidate_quality_scores') }}">
@@ -157,7 +176,8 @@
         <table class="table">
             <thead>
                 <tr>
-                    <th>Select</th>
+                    <th>Promote</th>
+                    <th>Delete</th>
                     <th>Brand</th>
                     <th>Slug</th>
                     <th>Category</th>
@@ -190,6 +210,15 @@
                             {% else %}
                                 -
                             {% endif %}
+                        </td>
+                        <td>
+                            <input
+                                type="checkbox"
+                                name="delete_candidate_ids"
+                                value="{{ row.id }}"
+                                form="bulk-delete-candidates-form"
+                                aria-label="Select {{ row.brand_name }} for deletion"
+                            >
                         </td>
                         <td>{{ row.brand_name }}</td>
                         <td>{{ row.brand_slug }}</td>
@@ -273,11 +302,27 @@
                                     <button class="secondary-button" type="submit">Promote to SEO brand</button>
                                 </form>
                             {% endif %}
+                            {% if row.status != 'archived' %}
+                                <form
+                                    method="post"
+                                    action="{{ url_for('archive_seo_brand_candidate_route', candidate_id=row.id) }}"
+                                    onsubmit="return confirm('Archive this candidate? It will be hidden from the default active list.');"
+                                >
+                                    <button class="secondary-button" type="submit">Archive</button>
+                                </form>
+                            {% endif %}
+                            <form
+                                method="post"
+                                action="{{ url_for('delete_seo_brand_candidate_route', candidate_id=row.id) }}"
+                                onsubmit="return confirm('Delete this candidate record? Published SEO brands and cache rows will not be deleted.');"
+                            >
+                                <button class="secondary-button" type="submit">Delete candidate</button>
+                            </form>
                         </td>
                     </tr>
                 {% else %}
                     <tr>
-                        <td colspan="16">
+                        <td colspan="17">
                             <span class="muted">No candidates added yet.</span>
                         </td>
                     </tr>

@@ -100,6 +100,27 @@
                                 <input type="hidden" name="return_to_admin" value="1">
                                 <button class="secondary-button" type="submit">Refresh</button>
                             </form>
+                            <form
+                                method="post"
+                                action="{{ url_for('unpublish_seo_brand_route', brand_slug=row.slug) }}"
+                                onsubmit="return confirm('Unpublish this SEO brand? The cache row will be preserved.');"
+                            >
+                                <button class="secondary-button" type="submit">Unpublish</button>
+                            </form>
+                            <form
+                                method="post"
+                                action="{{ url_for('delete_seo_brand_cache_route', brand_slug=row.slug) }}"
+                                onsubmit="return confirm('Delete only the cached ad previews for this SEO brand? The brand page publishing state will not change.');"
+                            >
+                                <button class="secondary-button" type="submit">Delete cache only</button>
+                            </form>
+                            <form
+                                method="post"
+                                action="{{ url_for('delete_seo_brand_route', brand_slug=row.slug) }}"
+                                onsubmit="return confirm('Delete this SEO brand from the published catalog and delete its cache? Candidate records will not be deleted.');"
+                            >
+                                <button class="secondary-button" type="submit">Delete brand</button>
+                            </form>
                         </td>
                     </tr>
                 {% endfor %}

@@ -1684,6 +1684,7 @@ def get_next_seo_automation_candidates(limit: int):
                            rejected_at, auto_published_at, last_scored_at
                     FROM seo_brand_candidates
                     WHERE published_brand_id IS NULL
+                    AND COALESCE(status, 'not_tested') != 'archived'
                     AND COALESCE(quality_status, 'untested') IN ('untested', 'failed', 'inconclusive')
                     ORDER BY updated_at ASC, id ASC
                     LIMIT %s
@@ -1906,6 +1907,8 @@ def get_published_seo_brands():
         conn = get_db_connection()
         with conn:
             with conn.cursor() as cur:
+                cur.execute("SELECT COUNT(*) FROM seo_brands")
+                total_db_brands = int(cur.fetchone()[0] or 0)
                 cur.execute(
                     """
                     SELECT id, brand_name, brand_slug, search_query, category,
@@ -1918,7 +1921,7 @@ def get_published_seo_brands():
                     """
                 )
                 brands = [seo_brand_row_to_dict(row) for row in cur.fetchall()]
-                return brands or BRAND_PAGES
+                return brands if total_db_brands > 0 else BRAND_PAGES
     except Exception as exc:
         print("SEO brands DB read error:", str(exc))
         return BRAND_PAGES
@@ -1945,12 +1948,13 @@ def get_brand_by_slug(brand_slug: str):
                            is_published, source_candidate_id, published_at
                     FROM seo_brands
                     WHERE brand_slug = %s
-                    AND is_published = TRUE
                     """,
                     (slug,),
                 )
                 row = cur.fetchone()
                 if row:
+                    if not row[13]:
+                        return None
                     return seo_brand_row_to_dict(row)
     except Exception as exc:
         print("SEO brand lookup DB error:", str(exc))
@@ -1986,6 +1990,190 @@ def get_related_brands(brand, limit: int = 5):
         return get_static_related_brands(brand, limit=limit)
 
 
+def is_static_seo_brand_slug(brand_slug: str):
+    return get_static_brand_by_slug((brand_slug or "").strip().lower()) is not None
+
+
+def unpublish_seo_brand(brand_slug: str):
+    slug = (brand_slug or "").strip().lower()
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE seo_brands
+                    SET is_published = FALSE,
+                        updated_at = NOW()
+                    WHERE brand_slug = %s
+                    RETURNING brand_name
+                    """,
+                    (slug,),
+                )
+                row = cur.fetchone()
+                if row:
+                    return row[0]
+
+                static_brand = get_static_brand_by_slug(slug)
+                if not static_brand:
+                    return None
+
+                defaults = build_seo_brand_defaults(
+                    static_brand["name"],
+                    static_brand["slug"],
+                    category=static_brand.get("category") or "",
+                )
+                cur.execute(
+                    """
+                    INSERT INTO seo_brands (
+                        brand_name, brand_slug, search_query, category, focus,
+                        audience, creative_angle, market_context, headline,
+                        meta_title, meta_description, summary, is_published,
+                        updated_at
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE, NOW())
+                    ON CONFLICT (brand_slug)
+                    DO UPDATE SET
+                        is_published = FALSE,
+                        updated_at = NOW()
+                    """,
+                    (
+                        static_brand["name"],
+                        static_brand["slug"],
+                        static_brand.get("search_query") or defaults["search_query"],
+                        static_brand.get("category") or defaults["category"],
+                        static_brand.get("focus") or defaults["focus"],
+                        static_brand.get("audience") or defaults["audience"],
+                        static_brand.get("creative_angle") or defaults["creative_angle"],
+                        static_brand.get("market_context") or defaults["market_context"],
+                        static_brand.get("headline") or defaults["headline"],
+                        static_brand.get("meta_title") or defaults["meta_title"],
+                        static_brand.get("meta_description") or defaults["meta_description"],
+                        static_brand.get("summary") or defaults["summary"],
+                    ),
+                )
+                return static_brand["name"]
+    finally:
+        conn.close()
+
+
+def delete_seo_brand_cache(brand_slug: str):
+    slug = (brand_slug or "").strip().lower()
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM seo_brand_ad_cache
+                    WHERE brand_slug = %s
+                    """,
+                    (slug,),
+                )
+                return cur.rowcount
+    finally:
+        conn.close()
+
+
+def delete_seo_brand(brand_slug: str):
+    slug = (brand_slug or "").strip().lower()
+    brand_name = None
+    retained_tombstone = False
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT brand_name
+                    FROM seo_brands
+                    WHERE brand_slug = %s
+                    """,
+                    (slug,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    static_brand = get_static_brand_by_slug(slug)
+                    if not static_brand:
+                        return None, retained_tombstone
+
+                    cur.execute(
+                        """
+                        DELETE FROM seo_brand_ad_cache
+                        WHERE brand_slug = %s
+                        """,
+                        (slug,),
+                    )
+                    defaults = build_seo_brand_defaults(
+                        static_brand["name"],
+                        static_brand["slug"],
+                        category=static_brand.get("category") or "",
+                    )
+                    cur.execute(
+                        """
+                        INSERT INTO seo_brands (
+                            brand_name, brand_slug, search_query, category, focus,
+                            audience, creative_angle, market_context, headline,
+                            meta_title, meta_description, summary, is_published,
+                            updated_at
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE, NOW())
+                        ON CONFLICT (brand_slug)
+                        DO UPDATE SET
+                            is_published = FALSE,
+                            updated_at = NOW()
+                        """,
+                        (
+                            static_brand["name"],
+                            static_brand["slug"],
+                            static_brand.get("search_query") or defaults["search_query"],
+                            static_brand.get("category") or defaults["category"],
+                            static_brand.get("focus") or defaults["focus"],
+                            static_brand.get("audience") or defaults["audience"],
+                            static_brand.get("creative_angle") or defaults["creative_angle"],
+                            static_brand.get("market_context") or defaults["market_context"],
+                            static_brand.get("headline") or defaults["headline"],
+                            static_brand.get("meta_title") or defaults["meta_title"],
+                            static_brand.get("meta_description") or defaults["meta_description"],
+                            static_brand.get("summary") or defaults["summary"],
+                        ),
+                    )
+                    return static_brand["name"], True
+
+                brand_name = row[0]
+                cur.execute(
+                    """
+                    DELETE FROM seo_brand_ad_cache
+                    WHERE brand_slug = %s
+                    """,
+                    (slug,),
+                )
+
+                if is_static_seo_brand_slug(slug):
+                    cur.execute(
+                        """
+                        UPDATE seo_brands
+                        SET is_published = FALSE,
+                            updated_at = NOW()
+                        WHERE brand_slug = %s
+                        """,
+                        (slug,),
+                    )
+                    retained_tombstone = True
+                else:
+                    cur.execute(
+                        """
+                        DELETE FROM seo_brands
+                        WHERE brand_slug = %s
+                        """,
+                        (slug,),
+                    )
+
+                return brand_name, retained_tombstone
+    finally:
+        conn.close()
+
+
 def get_candidate_status_label(status: str):
     labels = {
         "qualified": "Qualified",
@@ -1993,6 +2181,7 @@ def get_candidate_status_label(status: str):
         "inconclusive": "Search inconclusive",
         "failed": "Failed",
         "not_tested": "Not tested",
+        "archived": "Archived",
     }
     return labels.get(status or "not_tested", "Not tested")
 
@@ -2021,9 +2210,22 @@ def get_candidate_sort_options():
     ]
 
 
+def get_candidate_view_options():
+    return [
+        {"key": "active", "label": "Active candidates"},
+        {"key": "archived", "label": "Archived candidates"},
+        {"key": "all", "label": "All candidates"},
+    ]
+
+
 def normalize_candidate_sort(value: str):
     allowed = {item["key"] for item in get_candidate_sort_options()}
     return value if value in allowed else "qualified_first"
+
+
+def normalize_candidate_view(value: str):
+    allowed = {item["key"] for item in get_candidate_view_options()}
+    return value if value in allowed else "active"
 
 
 def get_cache_status_display(raw_status, preview_count: int):
@@ -2131,7 +2333,16 @@ def attach_cache_status_to_candidates(rows):
     return enriched_rows
 
 
-def get_seo_brand_candidate_rows(sort_key: str = "qualified_first"):
+def filter_candidate_rows(rows, view_key: str):
+    view_key = normalize_candidate_view(view_key)
+    if view_key == "archived":
+        return [row for row in rows if row.get("status") == "archived"]
+    if view_key == "all":
+        return rows
+    return [row for row in rows if row.get("status") != "archived"]
+
+
+def get_seo_brand_candidate_rows(sort_key: str = "qualified_first", view_key: str = "active"):
     conn = get_db_connection()
     try:
         with conn:
@@ -2152,6 +2363,7 @@ def get_seo_brand_candidate_rows(sort_key: str = "qualified_first"):
                 )
                 rows = [seo_brand_candidate_row_to_dict(row) for row in cur.fetchall()]
                 rows = attach_cache_status_to_candidates(rows)
+                rows = filter_candidate_rows(rows, view_key)
                 return apply_candidate_sort(rows, sort_key)
     finally:
         conn.close()
@@ -2235,6 +2447,73 @@ def count_seo_brand_candidates():
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) FROM seo_brand_candidates")
                 return int(cur.fetchone()[0] or 0)
+    finally:
+        conn.close()
+
+
+def archive_seo_brand_candidate(candidate_id: int):
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE seo_brand_candidates
+                    SET status = 'archived',
+                        updated_at = NOW()
+                    WHERE id = %s
+                    RETURNING brand_name
+                    """,
+                    (candidate_id,),
+                )
+                row = cur.fetchone()
+                return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def delete_seo_brand_candidate(candidate_id: int):
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM seo_brand_candidates
+                    WHERE id = %s
+                    RETURNING brand_name
+                    """,
+                    (candidate_id,),
+                )
+                row = cur.fetchone()
+                return row[0] if row else None
+    finally:
+        conn.close()
+
+
+def bulk_delete_seo_brand_candidates(candidate_ids: list[int]):
+    clean_ids = []
+    for candidate_id in candidate_ids:
+        try:
+            clean_ids.append(int(candidate_id))
+        except (TypeError, ValueError):
+            continue
+
+    if not clean_ids:
+        return 0
+
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM seo_brand_candidates
+                    WHERE id = ANY(%s)
+                    """,
+                    (clean_ids,),
+                )
+                return cur.rowcount
     finally:
         conn.close()
 
@@ -3789,7 +4068,8 @@ def seo_brand_candidates():
                 flash(f"Could not save candidate: {str(exc)}")
 
     selected_sort = normalize_candidate_sort(request.args.get("sort") or "qualified_first")
-    candidate_rows = get_seo_brand_candidate_rows(sort_key=selected_sort)
+    selected_view = normalize_candidate_view(request.args.get("view") or "active")
+    candidate_rows = get_seo_brand_candidate_rows(sort_key=selected_sort, view_key=selected_view)
     automation_settings = get_seo_automation_settings()
     automation_usage = get_seo_automation_daily_usage()
 
@@ -3798,6 +4078,8 @@ def seo_brand_candidates():
         candidate_rows=candidate_rows,
         sort_options=get_candidate_sort_options(),
         selected_sort=selected_sort,
+        view_options=get_candidate_view_options(),
+        selected_view=selected_view,
         max_results=automation_settings["max_results_per_test"],
         automation_settings=automation_settings,
         automation_usage=automation_usage,
@@ -4079,6 +4361,39 @@ def bulk_promote_seo_brand_candidates():
             message += f"; plus {len(errors) - 3} more."
     flash(message)
 
+    return redirect(url_for("seo_brand_candidates"))
+
+
+@app.route("/admin/seo-brand-candidates/<int:candidate_id>/archive", methods=["POST"])
+@admin_required
+def archive_seo_brand_candidate_route(candidate_id):
+    candidate_name = archive_seo_brand_candidate(candidate_id)
+    if candidate_name:
+        flash(f"{candidate_name} archived. It is hidden from the default active candidate list.")
+    else:
+        flash("Candidate not found.")
+    return redirect(url_for("seo_brand_candidates"))
+
+
+@app.route("/admin/seo-brand-candidates/<int:candidate_id>/delete", methods=["POST"])
+@admin_required
+def delete_seo_brand_candidate_route(candidate_id):
+    candidate_name = delete_seo_brand_candidate(candidate_id)
+    if candidate_name:
+        flash(f"{candidate_name} candidate deleted. Published SEO brands and cache were not changed.")
+    else:
+        flash("Candidate not found.")
+    return redirect(url_for("seo_brand_candidates"))
+
+
+@app.route("/admin/seo-brand-candidates/bulk-delete", methods=["POST"])
+@admin_required
+def bulk_delete_seo_brand_candidates_route():
+    deleted_count = bulk_delete_seo_brand_candidates(request.form.getlist("delete_candidate_ids"))
+    flash(
+        f"Deleted {deleted_count} candidate record"
+        f"{'' if deleted_count == 1 else 's'}. Published SEO brands and cache were not changed."
+    )
     return redirect(url_for("seo_brand_candidates"))
 
 
@@ -4371,6 +4686,56 @@ def refresh_stale_seo_brand_cache():
     except Exception as exc:
         flash(f"Stale SEO cache refresh failed: {str(exc)}")
 
+    return redirect(url_for("seo_brand_cache_admin"))
+
+
+@app.route("/admin/seo-brand-cache/<brand_slug>/unpublish", methods=["POST"])
+@admin_required
+def unpublish_seo_brand_route(brand_slug):
+    brand = get_brand_by_slug(brand_slug) or get_static_brand_by_slug((brand_slug or "").strip().lower())
+    if not brand:
+        flash("SEO brand not found.")
+        return redirect(url_for("seo_brand_cache_admin"))
+
+    brand_name = unpublish_seo_brand(brand["slug"])
+    if brand_name:
+        flash(f"{brand_name} unpublished. Cache was preserved.")
+    else:
+        flash(f"{brand['name']} could not be unpublished.")
+    return redirect(url_for("seo_brand_cache_admin"))
+
+
+@app.route("/admin/seo-brand-cache/<brand_slug>/delete-cache", methods=["POST"])
+@admin_required
+def delete_seo_brand_cache_route(brand_slug):
+    brand = get_brand_by_slug(brand_slug) or get_static_brand_by_slug((brand_slug or "").strip().lower())
+    deleted_count = delete_seo_brand_cache(brand_slug)
+    brand_name = brand["name"] if brand else brand_slug
+    flash(
+        f"{brand_name} cache deleted ({deleted_count} row"
+        f"{'' if deleted_count == 1 else 's'}). SEO brand publishing state was not changed."
+    )
+    return redirect(url_for("seo_brand_cache_admin"))
+
+
+@app.route("/admin/seo-brand-cache/<brand_slug>/delete-brand", methods=["POST"])
+@admin_required
+def delete_seo_brand_route(brand_slug):
+    brand = get_brand_by_slug(brand_slug) or get_static_brand_by_slug((brand_slug or "").strip().lower())
+    if not brand:
+        flash("SEO brand not found.")
+        return redirect(url_for("seo_brand_cache_admin"))
+
+    brand_name, retained_tombstone = delete_seo_brand(brand["slug"])
+    if not brand_name:
+        flash(f"{brand['name']} could not be deleted.")
+    elif retained_tombstone:
+        flash(
+            f"{brand_name} unpublished and cache deleted. An unpublished DB tombstone was kept "
+            "so the static fallback does not republish it."
+        )
+    else:
+        flash(f"{brand_name} SEO brand deleted and cache deleted. Candidate records were not changed.")
     return redirect(url_for("seo_brand_cache_admin"))
 
 
