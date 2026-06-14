@@ -3230,6 +3230,100 @@ def seo_cache_diagnostics():
     return jsonify(diagnostics)
 
 
+@app.route("/admin/seo-cache-read-diagnostics")
+@admin_required
+def seo_cache_read_diagnostics():
+    diagnostics = {}
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                for slug in SEO_CACHE_DIAGNOSTIC_SLUGS:
+                    raw_cache = {
+                        "row_exists": False,
+                        "preview_count": 0,
+                        "ads_json_count": 0,
+                        "refresh_status": None,
+                        "last_error": None,
+                    }
+                    cur.execute(
+                        """
+                        SELECT ads_json, preview_count, refresh_status, last_error
+                        FROM seo_brand_ad_cache
+                        WHERE brand_slug = %s
+                        """,
+                        (slug,),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        ads = []
+                        try:
+                            ads = json.loads(row[0] or "[]")
+                        except (TypeError, ValueError):
+                            ads = []
+                        if not isinstance(ads, list):
+                            ads = []
+                        raw_cache = {
+                            "row_exists": True,
+                            "preview_count": int(row[1] or 0),
+                            "ads_json_count": len(ads),
+                            "refresh_status": row[2],
+                            "last_error": row[3],
+                        }
+
+                    brand = get_brand_by_slug(slug)
+                    brand_summary = {
+                        "brand_exists": bool(brand),
+                        "brand_name": brand.get("name") if brand else None,
+                        "brand_slug": brand.get("slug") if brand else None,
+                        "is_published": bool(brand.get("is_published", True)) if brand else False,
+                    }
+
+                    helper_summary = {
+                        "helper_ads_count": 0,
+                        "helper_status": None,
+                        "helper_error": None,
+                        "first_3_helper_ad_ids": [],
+                        "first_3_helper_snapshot_urls": [],
+                        "first_3_helper_media_urls": [],
+                    }
+                    try:
+                        if brand:
+                            seo_ads_cache = get_cached_seo_brand_ads(
+                                brand["slug"],
+                                fallback_brand_name=brand["name"],
+                            )
+                            helper_ads = seo_ads_cache.get("ads") or []
+                            first_ads = helper_ads[:SEO_BRAND_PREVIEW_COUNT]
+                            helper_summary = {
+                                "helper_ads_count": len(helper_ads),
+                                "helper_status": seo_ads_cache.get("refresh_status"),
+                                "helper_error": seo_ads_cache.get("last_error"),
+                                "first_3_helper_ad_ids": [
+                                    ad.get("ad_id") for ad in first_ads if isinstance(ad, dict)
+                                ],
+                                "first_3_helper_snapshot_urls": [
+                                    ad.get("snapshot_url") for ad in first_ads if isinstance(ad, dict)
+                                ],
+                                "first_3_helper_media_urls": [
+                                    ad.get("media_url") for ad in first_ads if isinstance(ad, dict)
+                                ],
+                            }
+                    except Exception as exc:
+                        helper_summary["helper_error"] = str(exc)
+
+                    diagnostics[slug] = {
+                        "slug_requested": slug,
+                        "brand": brand_summary,
+                        "raw_cache": raw_cache,
+                        "public_helper": helper_summary,
+                    }
+    finally:
+        conn.close()
+
+    return jsonify(diagnostics)
+
+
 @app.route("/admin/seo-brand-candidates", methods=["GET", "POST"])
 @admin_required
 def seo_brand_candidates():
