@@ -2464,7 +2464,16 @@ def refresh_seo_brand_ads_cache(brand, country: str = "NO"):
     }
 
 
-def refresh_seo_brand_ads_cache_for_candidate(brand, candidate):
+def build_seo_brand_cache_candidate(brand):
+    return {
+        "brand_name": brand.get("search_query") or brand.get("name") or title_from_slug(brand.get("slug", "")),
+        "brand_slug": brand.get("slug") or slugify_brand_name(brand.get("name", "")),
+        "category": brand.get("category") or "",
+    }
+
+
+def refresh_seo_brand_ads_cache_for_candidate(brand, candidate=None):
+    candidate = candidate or build_seo_brand_cache_candidate(brand)
     ads, diagnostics = fetch_candidate_validation_ads(
         candidate,
         max_results=SEO_CANDIDATE_TEST_MAX_RESULTS,
@@ -3917,10 +3926,10 @@ def refresh_seo_brand_cache(brand_slug):
     if not brand:
         abort(404)
 
-    country = "NO"
+    country = SEO_CANDIDATE_TEST_COUNTRY
 
     try:
-        refresh_result = refresh_seo_brand_ads_cache(brand, country=country)
+        refresh_result = refresh_seo_brand_ads_cache_for_candidate(brand)
         result_count = refresh_result["result_count"]
         preview_count = refresh_result["preview_count"]
 
