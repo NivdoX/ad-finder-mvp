@@ -2390,6 +2390,27 @@ def refresh_seo_brand_ads_cache(brand, country: str = "NO"):
     }
 
 
+def refresh_seo_brand_ads_cache_for_candidate(brand, candidate):
+    ads, diagnostics = fetch_candidate_validation_ads(
+        candidate,
+        max_results=SEO_CANDIDATE_TEST_MAX_RESULTS,
+        max_variant_attempts=SEO_CANDIDATE_MAX_QUERY_VARIANTS,
+    )
+    result_count = len(ads)
+    preview_count = min(result_count, SEO_BRAND_PREVIEW_COUNT)
+    save_seo_brand_ads_cache(
+        brand,
+        ads,
+        country=SEO_CANDIDATE_TEST_COUNTRY,
+        result_count=result_count,
+    )
+    return {
+        "result_count": result_count,
+        "preview_count": preview_count,
+        "diagnostics": diagnostics,
+    }
+
+
 def create_alert(alert_key: str, alert_type: str, severity: str, message: str):
     conn = get_db_connection()
     try:
@@ -3327,9 +3348,10 @@ def promote_seo_brand_candidate_route(candidate_id):
     )
 
     try:
-        refresh_result = refresh_seo_brand_ads_cache(brand, country="NO")
+        refresh_result = refresh_seo_brand_ads_cache_for_candidate(brand, candidate)
         preview_count = refresh_result["preview_count"]
         result_count = refresh_result["result_count"]
+        diagnostics = refresh_result.get("diagnostics") or {}
         if preview_count > 0:
             flash(
                 f"{candidate['brand_name']} promoted successfully. "
@@ -3338,12 +3360,14 @@ def promote_seo_brand_candidate_route(candidate_id):
         else:
             flash(
                 f"{candidate['brand_name']} promoted successfully, "
-                f"but cache refresh found no preview ads from {result_count} results."
+                f"but candidate-style cache refresh found no preview ads from "
+                f"{result_count} filtered results. Reason: "
+                f"{diagnostics.get('rejection_reason') or 'no_preview_ads'}."
             )
     except MetaAdsServiceError as exc:
         error_message = str(exc)
         try:
-            save_seo_brand_cache_error(brand, error_message, country="NO")
+            save_seo_brand_cache_error(brand, error_message, country=SEO_CANDIDATE_TEST_COUNTRY)
         except Exception as save_exc:
             print("SEO brand cache error save failed:", str(save_exc))
         flash(
@@ -3354,7 +3378,7 @@ def promote_seo_brand_candidate_route(candidate_id):
         error_message = str(exc)
         print("SEO brand promote cache refresh error:", error_message)
         try:
-            save_seo_brand_cache_error(brand, error_message, country="NO")
+            save_seo_brand_cache_error(brand, error_message, country=SEO_CANDIDATE_TEST_COUNTRY)
         except Exception as save_exc:
             print("SEO brand cache error save failed:", str(save_exc))
         flash(
