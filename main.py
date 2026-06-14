@@ -1240,6 +1240,158 @@ def get_seo_brand_cache_admin_rows():
     }
 
 
+def get_seo_market_audit_report():
+    candidates = get_seo_brand_candidate_rows()
+    published_brands = get_published_seo_brands()
+    cache_by_slug = {}
+
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT brand_slug, brand_name, country, result_count, preview_count,
+                           refresh_status, fetched_at, expires_at, last_error, updated_at
+                    FROM seo_brand_ad_cache
+                    """
+                )
+                for row in cur.fetchall():
+                    cache_by_slug[row[0]] = {
+                        "brand_slug": row[0],
+                        "brand_name": row[1],
+                        "country": row[2],
+                        "result_count": int(row[3] or 0),
+                        "preview_count": int(row[4] or 0),
+                        "refresh_status": row[5],
+                        "fetched_at": row[6],
+                        "expires_at": row[7],
+                        "last_error": row[8],
+                        "updated_at": row[9],
+                    }
+    finally:
+        conn.close()
+
+    candidates_by_slug = {row["brand_slug"]: row for row in candidates}
+    published_by_slug = {brand["slug"]: brand for brand in published_brands}
+    now = utcnow()
+
+    def candidate_test_market(candidate):
+        raw = candidate.get("quality_signals_json")
+        if not raw:
+            return None
+        try:
+            signals = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+        diagnostics = signals.get("diagnostics") if isinstance(signals, dict) else None
+        if not isinstance(diagnostics, dict):
+            return None
+        country = diagnostics.get("country")
+        return str(country).upper() if country else None
+
+    candidates_needing_retest = []
+    for candidate in candidates:
+        test_market = candidate_test_market(candidate)
+        preview_count = int(candidate.get("preview_count") or 0)
+        quality_status = candidate.get("quality_status") or "untested"
+        needs_retest = (
+            not candidate.get("last_tested_at")
+            or quality_status in ("untested", "failed", "inconclusive", "rejected")
+            or test_market != SEO_CANDIDATE_TEST_COUNTRY
+        )
+        if needs_retest:
+            row = dict(candidate)
+            row["test_market"] = test_market or "unknown"
+            row["reason"] = "Not tested"
+            if candidate.get("last_tested_at") and test_market != SEO_CANDIDATE_TEST_COUNTRY:
+                row["reason"] = "Tested before/without US market diagnostics"
+            elif quality_status in ("failed", "inconclusive", "rejected"):
+                row["reason"] = get_quality_status_label(quality_status)
+            elif preview_count == 0:
+                row["reason"] = "No previews"
+            candidates_needing_retest.append(row)
+
+    brands_needing_refresh = []
+    brands_with_previews = []
+    published_empty_cache = []
+    pre_us_cache_rows = []
+    published_without_candidate = []
+
+    for slug, brand in published_by_slug.items():
+        cache = cache_by_slug.get(slug)
+        candidate = candidates_by_slug.get(slug)
+        if not candidate:
+            published_without_candidate.append(
+                {
+                    "brand_name": brand["name"],
+                    "brand_slug": slug,
+                    "category": brand.get("category"),
+                }
+            )
+
+        preview_count = int(cache.get("preview_count") or 0) if cache else 0
+        country = (cache.get("country") or "unknown") if cache else "none"
+        cache_row = {
+            "brand_name": brand["name"],
+            "brand_slug": slug,
+            "preview_count": preview_count,
+            "result_count": cache.get("result_count") if cache else 0,
+            "refresh_status": cache.get("refresh_status") if cache else None,
+            "country": country,
+            "fetched_at": cache.get("fetched_at") if cache else None,
+            "updated_at": cache.get("updated_at") if cache else None,
+            "expires_at": cache.get("expires_at") if cache else None,
+            "is_expired": bool(cache and cache.get("expires_at") and cache["expires_at"] < now),
+            "last_error": cache.get("last_error") if cache else None,
+        }
+
+        if cache and str(country).upper() != SEO_CANDIDATE_TEST_COUNTRY:
+            pre_us_cache_rows.append(cache_row)
+
+        if preview_count > 0:
+            brands_with_previews.append(cache_row)
+        else:
+            brands_needing_refresh.append(cache_row)
+            published_empty_cache.append(cache_row)
+
+    candidate_not_published = [
+        {
+            "brand_name": candidate["brand_name"],
+            "brand_slug": candidate["brand_slug"],
+            "status_label": candidate["status_label"],
+            "quality_status_label": candidate["quality_status_label"],
+            "quality_score": candidate["quality_score"],
+            "preview_count": candidate.get("preview_count") or 0,
+            "last_tested_at": candidate.get("last_tested_at"),
+            "is_qualified": candidate.get("is_qualified"),
+        }
+        for slug, candidate in candidates_by_slug.items()
+        if slug not in published_by_slug
+    ]
+
+    return {
+        "summary": {
+            "total_candidates": len(candidates),
+            "total_published": len(published_brands),
+            "total_cache_rows": len(cache_by_slug),
+            "candidates_needing_retest": len(candidates_needing_retest),
+            "published_needing_refresh": len(brands_needing_refresh),
+            "published_with_previews": len(brands_with_previews),
+            "candidate_not_published": len(candidate_not_published),
+            "published_without_candidate": len(published_without_candidate),
+            "pre_us_cache_rows": len(pre_us_cache_rows),
+        },
+        "candidates_needing_retest": candidates_needing_retest,
+        "brands_needing_refresh": brands_needing_refresh,
+        "brands_with_previews": brands_with_previews,
+        "candidate_not_published": candidate_not_published,
+        "published_without_candidate": published_without_candidate,
+        "published_empty_cache": published_empty_cache,
+        "pre_us_cache_rows": pre_us_cache_rows,
+    }
+
+
 def slugify_brand_name(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-")
     return slug or "candidate"
@@ -3204,6 +3356,17 @@ def seo_brand_cache_admin():
         "seo_brand_cache_admin.html",
         cache_rows=cache_admin_data["rows"],
         cache_summary=cache_admin_data["summary"],
+    )
+
+
+@app.route("/admin/seo-market-audit")
+@admin_required
+def seo_market_audit():
+    report = get_seo_market_audit_report()
+    return render_template(
+        "seo_market_audit.html",
+        report=report,
+        expected_country=SEO_CANDIDATE_TEST_COUNTRY,
     )
 
 

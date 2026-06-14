@@ -1,0 +1,283 @@
+{% extends "layout.html" %}
+{% block title %}SEO market audit - RunningAds{% endblock %}
+
+{% block content %}
+<div class="simple-grid">
+    <div class="panel">
+        <div class="pill">SEO audit</div>
+        <h2>US market migration overview</h2>
+        <p class="muted">
+            Read-only overview of candidates, published SEO brands, cache coverage, and records that may
+            need retesting or refresh after the US market switch.
+        </p>
+        <p>
+            <a class="topbar-btn" href="{{ url_for('seo_brand_candidates') }}">Candidates</a>
+            <a class="topbar-btn" href="{{ url_for('seo_brand_cache_admin') }}">SEO cache</a>
+            <a class="topbar-btn" href="{{ url_for('admin') }}">Back to admin</a>
+        </p>
+    </div>
+</div>
+
+<div class="simple-grid five-col">
+    <div class="panel">
+        <div class="pill">Candidates</div>
+        <h3>{{ report.summary.total_candidates }}</h3>
+        <p class="muted">Tracked</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Published</div>
+        <h3>{{ report.summary.total_published }}</h3>
+        <p class="muted">SEO brands</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Retest</div>
+        <h3>{{ report.summary.candidates_needing_retest }}</h3>
+        <p class="muted">Candidates</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Refresh</div>
+        <h3>{{ report.summary.published_needing_refresh }}</h3>
+        <p class="muted">Published empty cache</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Working</div>
+        <h3>{{ report.summary.published_with_previews }}</h3>
+        <p class="muted">With previews</p>
+    </div>
+</div>
+
+<div class="simple-grid">
+    <div class="panel">
+        <h2>Candidates needing retest</h2>
+        <p class="muted">Includes untested, failed, inconclusive, rejected, or non-{{ expected_country }} / unknown-market test records.</p>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Status</th>
+                    <th>Quality</th>
+                    <th>Score</th>
+                    <th>Previews</th>
+                    <th>Test market</th>
+                    <th>Last tested</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in report.candidates_needing_retest %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.status_label }}</td>
+                        <td>{{ row.quality_status_label }}</td>
+                        <td>{{ row.quality_score or 0 }}</td>
+                        <td>{{ row.preview_count or 0 }}</td>
+                        <td>{{ row.test_market }}</td>
+                        <td>{{ row.last_tested_at or '-' }}</td>
+                        <td>{{ row.reason }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="8"><span class="muted">No candidates currently flagged for retest.</span></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="simple-grid">
+    <div class="panel">
+        <h2>Published SEO brands needing cache refresh</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Slug</th>
+                    <th>Previews</th>
+                    <th>Status</th>
+                    <th>Country</th>
+                    <th>Updated</th>
+                    <th>Last error</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in report.brands_needing_refresh %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.brand_slug }}</td>
+                        <td>{{ row.preview_count }}</td>
+                        <td>{{ row.refresh_status or 'not_refreshed' }}</td>
+                        <td>{{ row.country }}</td>
+                        <td>{{ row.updated_at or row.fetched_at or '-' }}</td>
+                        <td>
+                            {% if row.last_error %}
+                                <span class="danger-note">{{ row.last_error|truncate(120, True) }}</span>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="7"><span class="muted">All published brands currently have cached previews.</span></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="simple-grid">
+    <div class="panel">
+        <h2>Published SEO brands with working previews</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Slug</th>
+                    <th>Previews</th>
+                    <th>Status</th>
+                    <th>Country</th>
+                    <th>Last refreshed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in report.brands_with_previews %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.brand_slug }}</td>
+                        <td>{{ row.preview_count }}</td>
+                        <td>{{ row.refresh_status or '-' }}</td>
+                        <td>{{ row.country }}</td>
+                        <td>{{ row.updated_at or row.fetched_at or '-' }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="6"><span class="muted">No published brands have working previews yet.</span></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="simple-grid two-col">
+    <div class="panel">
+        <h2>Candidates not published</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Status</th>
+                    <th>Quality</th>
+                    <th>Score</th>
+                    <th>Previews</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in report.candidate_not_published %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.status_label }}</td>
+                        <td>{{ row.quality_status_label }}</td>
+                        <td>{{ row.quality_score or 0 }}</td>
+                        <td>{{ row.preview_count or 0 }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5"><span class="muted">No candidate-only brands found.</span></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Published without candidate</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Slug</th>
+                    <th>Category</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in report.published_without_candidate %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.brand_slug }}</td>
+                        <td>{{ row.category or '-' }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="3"><span class="muted">Every published brand has a candidate row.</span></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="simple-grid two-col">
+    <div class="panel">
+        <h2>Published but empty cache</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Slug</th>
+                    <th>Status</th>
+                    <th>Country</th>
+                    <th>Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in report.published_empty_cache %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.brand_slug }}</td>
+                        <td>{{ row.refresh_status or 'not_refreshed' }}</td>
+                        <td>{{ row.country }}</td>
+                        <td>{{ row.updated_at or row.fetched_at or '-' }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5"><span class="muted">No published brands have empty cache.</span></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Non-US or unknown cache rows</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Slug</th>
+                    <th>Previews</th>
+                    <th>Country</th>
+                    <th>Updated</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in report.pre_us_cache_rows %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.brand_slug }}</td>
+                        <td>{{ row.preview_count }}</td>
+                        <td>{{ row.country }}</td>
+                        <td>{{ row.updated_at or row.fetched_at or '-' }}</td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5"><span class="muted">No non-US cache rows found for published brands.</span></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
