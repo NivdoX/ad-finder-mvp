@@ -93,6 +93,8 @@ SEO_CANDIDATE_QUERY_ALIASES = {
     "ag1": ["AG1", "Athletic Greens"],
 }
 
+SEO_CACHE_DIAGNOSTIC_SLUGS = ("whoop", "native", "oura")
+
 PLAN_LIMITS = {
     "basic": {"monthly": 40, "daily": 5},
     "pro": {"monthly": 90, "daily": 15},
@@ -3121,6 +3123,111 @@ def seo_brand_cache_admin():
         cache_rows=cache_admin_data["rows"],
         cache_summary=cache_admin_data["summary"],
     )
+
+
+def isoformat_or_none(value):
+    return value.isoformat() if value else None
+
+
+@app.route("/admin/seo-cache-diagnostics")
+@admin_required
+def seo_cache_diagnostics():
+    diagnostics = {
+        "slugs": list(SEO_CACHE_DIAGNOSTIC_SLUGS),
+        "cache": {},
+        "brands": {},
+    }
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT brand_slug, brand_name, search_query, country, ads_json,
+                           result_count, preview_count, fetched_at, expires_at,
+                           refresh_status, last_error, created_at, updated_at
+                    FROM seo_brand_ad_cache
+                    WHERE brand_slug = ANY(%s)
+                    ORDER BY brand_slug
+                    """,
+                    (list(SEO_CACHE_DIAGNOSTIC_SLUGS),),
+                )
+                for row in cur.fetchall():
+                    ads = []
+                    try:
+                        ads = json.loads(row[4] or "[]")
+                    except (TypeError, ValueError):
+                        ads = []
+                    if not isinstance(ads, list):
+                        ads = []
+
+                    first_ads = ads[:SEO_BRAND_PREVIEW_COUNT]
+                    diagnostics["cache"][row[0]] = {
+                        "row_count": 1,
+                        "brand_slug": row[0],
+                        "brand_name": row[1],
+                        "search_query": row[2],
+                        "country": row[3],
+                        "result_count": int(row[5] or 0),
+                        "preview_count": int(row[6] or 0),
+                        "ads_json_count": len(ads),
+                        "first_3_ad_ids": [ad.get("ad_id") for ad in first_ads if isinstance(ad, dict)],
+                        "first_3_snapshot_urls": [
+                            ad.get("snapshot_url") for ad in first_ads if isinstance(ad, dict)
+                        ],
+                        "fetched_at": isoformat_or_none(row[7]),
+                        "expires_at": isoformat_or_none(row[8]),
+                        "refresh_status": row[9],
+                        "last_error": row[10],
+                        "created_at": isoformat_or_none(row[11]),
+                        "updated_at": isoformat_or_none(row[12]),
+                    }
+
+                cur.execute(
+                    """
+                    SELECT brand_slug, brand_name, search_query, is_published,
+                           published_at, updated_at
+                    FROM seo_brands
+                    WHERE brand_slug = ANY(%s)
+                    ORDER BY brand_slug
+                    """,
+                    (list(SEO_CACHE_DIAGNOSTIC_SLUGS),),
+                )
+                for row in cur.fetchall():
+                    diagnostics["brands"][row[0]] = {
+                        "brand_slug": row[0],
+                        "brand_name": row[1],
+                        "search_query": row[2],
+                        "is_published": bool(row[3]),
+                        "published_at": isoformat_or_none(row[4]),
+                        "updated_at": isoformat_or_none(row[5]),
+                    }
+    finally:
+        conn.close()
+
+    for slug in SEO_CACHE_DIAGNOSTIC_SLUGS:
+        diagnostics["cache"].setdefault(
+            slug,
+            {
+                "row_count": 0,
+                "brand_slug": slug,
+                "preview_count": 0,
+                "ads_json_count": 0,
+                "first_3_ad_ids": [],
+                "first_3_snapshot_urls": [],
+                "refresh_status": None,
+            },
+        )
+        diagnostics["brands"].setdefault(
+            slug,
+            {
+                "brand_slug": slug,
+                "row_count": 0,
+                "is_published": False,
+            },
+        )
+
+    return jsonify(diagnostics)
 
 
 @app.route("/admin/seo-brand-candidates", methods=["GET", "POST"])
