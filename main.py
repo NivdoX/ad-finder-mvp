@@ -81,6 +81,7 @@ PUBLIC_SEARCH_COUNTRY = "US"
 SEO_BRAND_CACHE_TTL_HOURS = 72
 SEO_BRAND_PREVIEW_COUNT = 3
 SEO_BRAND_REFRESH_MAX_RESULTS = 12
+SEO_BRAND_CACHE_REFRESH_MAX_RESULTS = 50
 SEO_STALE_CACHE_REFRESH_LIMIT = 5
 SEO_CANDIDATE_TEST_COUNTRY = "US"
 SEO_CANDIDATE_TEST_MAX_RESULTS = 25
@@ -2995,6 +2996,38 @@ def build_seo_brand_cache_candidate(brand):
     }
 
 
+def get_existing_seo_cache_summary(brand_slug: str):
+    cached = get_seo_brand_cache_by_slug().get((brand_slug or "").strip().lower(), {})
+    ads_json_has_ads = False
+    if cached:
+        conn = get_db_connection()
+        try:
+            with conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT ads_json
+                        FROM seo_brand_ad_cache
+                        WHERE brand_slug = %s
+                        """,
+                        ((brand_slug or "").strip().lower(),),
+                    )
+                    row = cur.fetchone()
+                    if row:
+                        try:
+                            cached_ads = json.loads(row[0] or "[]")
+                        except (TypeError, ValueError):
+                            cached_ads = []
+                        ads_json_has_ads = isinstance(cached_ads, list) and len(cached_ads) > 0
+        finally:
+            conn.close()
+
+    return {
+        "preview_count": int(cached.get("preview_count") or 0),
+        "ads_json_has_ads": ads_json_has_ads,
+    }
+
+
 def refresh_seo_brand_ads_cache_for_candidate(brand, candidate=None):
     candidate = candidate or build_seo_brand_cache_candidate(brand)
     ads, diagnostics = fetch_candidate_validation_ads(
@@ -3014,6 +3047,37 @@ def refresh_seo_brand_ads_cache_for_candidate(brand, candidate=None):
         "result_count": result_count,
         "preview_count": preview_count,
         "diagnostics": diagnostics,
+    }
+
+
+def refresh_published_seo_brand_ads_cache(brand):
+    candidate = build_seo_brand_cache_candidate(brand)
+    existing_cache = get_existing_seo_cache_summary(brand["slug"])
+    ads, diagnostics = fetch_candidate_validation_ads(
+        candidate,
+        max_results=SEO_BRAND_CACHE_REFRESH_MAX_RESULTS,
+        max_variant_attempts=SEO_CANDIDATE_MAX_QUERY_VARIANTS,
+    )
+    result_count = len(ads)
+    preview_count = min(result_count, SEO_BRAND_PREVIEW_COUNT)
+    preserved_existing_previews = (
+        preview_count == 0
+        and (
+            existing_cache["preview_count"] > 0
+            or existing_cache["ads_json_has_ads"]
+        )
+    )
+    save_seo_brand_ads_cache(
+        brand,
+        ads,
+        country=SEO_CANDIDATE_TEST_COUNTRY,
+        result_count=result_count,
+    )
+    return {
+        "result_count": result_count,
+        "preview_count": preview_count,
+        "diagnostics": diagnostics,
+        "preserved_existing_previews": preserved_existing_previews,
     }
 
 
@@ -3088,11 +3152,11 @@ def refresh_stale_seo_brand_caches(limit: int = SEO_STALE_CACHE_REFRESH_LIMIT):
         cached = target["cache"]
         existing_preview_count = int(cached.get("preview_count") or 0)
         try:
-            refresh_result = refresh_seo_brand_ads_cache_for_candidate(brand)
+            refresh_result = refresh_published_seo_brand_ads_cache(brand)
             summary["brands_refreshed"] += 1
             if int(refresh_result.get("preview_count") or 0) > 0:
                 summary["brands_updated_with_previews"] += 1
-            elif existing_preview_count > 0:
+            elif refresh_result.get("preserved_existing_previews") or existing_preview_count > 0:
                 summary["brands_preserved"] += 1
             else:
                 summary["brands_no_previews"] += 1
@@ -4612,12 +4676,29 @@ def refresh_seo_brand_cache(brand_slug):
     country = SEO_CANDIDATE_TEST_COUNTRY
 
     try:
-        refresh_result = refresh_seo_brand_ads_cache_for_candidate(brand)
+        refresh_result = refresh_published_seo_brand_ads_cache(brand)
         result_count = refresh_result["result_count"]
         preview_count = refresh_result["preview_count"]
+        diagnostics = refresh_result.get("diagnostics") or {}
+        preserved_existing_previews = bool(refresh_result.get("preserved_existing_previews"))
+        diagnostic_summary = {
+            "raw_apify_count": int(diagnostics.get("raw_result_count") or 0),
+            "normalized_count": int(diagnostics.get("normalized_count") or 0),
+            "relevance_filtered_count": int(diagnostics.get("relevance_filtered_count") or 0),
+            "selected_query": diagnostics.get("selected_query"),
+            "final_preview_count": int(diagnostics.get("final_preview_count") or preview_count or 0),
+            "preserved_existing_previews": preserved_existing_previews,
+        }
 
         if request.form.get("return_to_admin") == "1":
-            flash(f"{brand['name']} SEO cache refreshed. {result_count} ads saved.")
+            flash(
+                f"{brand['name']} SEO cache refreshed. {result_count} filtered ads, "
+                f"{preview_count} new previews. Raw {diagnostic_summary['raw_apify_count']}, "
+                f"normalized {diagnostic_summary['normalized_count']}, "
+                f"relevance-filtered {diagnostic_summary['relevance_filtered_count']}, "
+                f"query {diagnostic_summary['selected_query'] or brand['search_query']}."
+                + (" Existing previews were preserved." if preserved_existing_previews else "")
+            )
             return redirect(url_for("seo_brand_cache_admin"))
 
         return jsonify(
@@ -4628,6 +4709,7 @@ def refresh_seo_brand_cache(brand_slug):
                 "result_count": result_count,
                 "preview_count": preview_count,
                 "expires_in_hours": SEO_BRAND_CACHE_TTL_HOURS,
+                "diagnostics": diagnostic_summary,
             }
         )
 
