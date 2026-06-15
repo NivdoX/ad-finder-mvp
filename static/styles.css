@@ -439,6 +439,21 @@ body {
     margin-top: 32px;
 }
 
+.seo-breadcrumb-panel {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.seo-breadcrumb-panel .brand-link {
+    display: inline-flex;
+    padding: 0;
+    border: none;
+    background: transparent;
+}
+
 .brand-link-grid {
     display: grid;
     gap: 10px;
