@@ -3367,6 +3367,7 @@ def index():
                 shown_count=0,
                 usage_message=usage_message,
                 blocked_message=None,
+                canonical_url=absolute_url("/"),
             )
 
         if not brand:
@@ -3381,6 +3382,7 @@ def index():
                 shown_count=0,
                 usage_message=usage_message,
                 blocked_message=None,
+                canonical_url=absolute_url("/"),
             )
 
         if user:
@@ -3400,6 +3402,7 @@ def index():
                     shown_count=0,
                     usage_message=get_usage_message(user),
                     blocked_message=blocked_message,
+                    canonical_url=absolute_url("/"),
                 )
         else:
             blocked = True
@@ -3415,6 +3418,7 @@ def index():
                 shown_count=0,
                 usage_message=None,
                 blocked_message=blocked_message,
+                canonical_url=absolute_url("/"),
             )
 
         searched = True
@@ -3504,6 +3508,7 @@ def index():
         shown_count=shown_count,
         usage_message=usage_message,
         blocked_message=blocked_message,
+        canonical_url=absolute_url("/"),
     )
 
 
@@ -3624,7 +3629,11 @@ def logout():
 def pricing():
     user = get_current_user()
     usage_message = get_usage_message(user)
-    return render_template("pricing.html", usage_message=usage_message)
+    return render_template(
+        "pricing.html",
+        usage_message=usage_message,
+        canonical_url=absolute_url("/pricing"),
+    )
 
 
 @app.route("/create-checkout/<plan>", methods=["POST"])
@@ -4869,12 +4878,68 @@ def stripe_webhook():
 ensure_schema()
 @app.route("/privacy")
 def privacy():
-    return render_template("privacy.html")
+    return render_template("privacy.html", canonical_url=absolute_url("/privacy"))
 
 
 @app.route("/terms")
 def terms():
-    return render_template("terms.html")
+    return render_template("terms.html", canonical_url=absolute_url("/terms"))
+
+
+def build_brand_structured_data(brand, canonical_url: str):
+    category_name = (brand.get("category") or "Brand research").strip()
+    breadcrumb_schema = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "@id": f"{canonical_url}#breadcrumb",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Home",
+                "item": absolute_url("/"),
+            },
+            {
+                "@type": "ListItem",
+                "position": 2,
+                "name": category_name.title(),
+                "item": f"{canonical_url}#category-context",
+            },
+            {
+                "@type": "ListItem",
+                "position": 3,
+                "name": f"{brand['name']} ads",
+                "item": canonical_url,
+            },
+        ],
+    }
+    webpage_schema = {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        "@id": f"{canonical_url}#webpage",
+        "name": brand["meta_title"],
+        "headline": brand["headline"],
+        "description": brand["meta_description"],
+        "url": canonical_url,
+        "isPartOf": {
+            "@type": "WebSite",
+            "name": "RunningAds",
+            "url": absolute_url("/"),
+        },
+        "about": {
+            "@type": "Brand",
+            "name": brand["name"],
+            "category": category_name,
+        },
+        "breadcrumb": {
+            "@id": f"{canonical_url}#breadcrumb",
+        },
+    }
+    return {
+        "webpage_schema_json": json.dumps(webpage_schema),
+        "breadcrumb_schema_json": json.dumps(breadcrumb_schema),
+    }
+
 
 @app.route("/brand/<brand_slug>")
 def brand_page(brand_slug):
@@ -4883,6 +4948,8 @@ def brand_page(brand_slug):
         abort(404)
 
     seo_ads_cache = get_cached_seo_brand_ads(brand["slug"], fallback_brand_name=brand["name"])
+    canonical_url = absolute_url(f"/brand/{brand['slug']}")
+    structured_data = build_brand_structured_data(brand, canonical_url)
 
     return render_template(
         "brand.html",
@@ -4892,7 +4959,8 @@ def brand_page(brand_slug):
         seo_ads_cache=seo_ads_cache,
         seo_public_page=True,
         seo_nav_brand=brand["search_query"],
-        canonical_url=absolute_url(f"/brand/{brand['slug']}"),
+        canonical_url=canonical_url,
+        **structured_data,
     )
 
 @app.route("/robots.txt")

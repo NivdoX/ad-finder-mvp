@@ -12,10 +12,26 @@
 <meta property="og:title" content="{{ brand.meta_title }}">
 <meta property="og:description" content="{{ brand.meta_description }}">
 <meta property="og:url" content="{{ canonical_url }}">
+<script type="application/ld+json">
+{{ webpage_schema_json|safe }}
+</script>
+<script type="application/ld+json">
+{{ breadcrumb_schema_json|safe }}
+</script>
 {% endblock %}
 
 {% block content %}
 <main class="page seo-page">
+    <nav class="simple-grid" aria-label="Breadcrumb">
+        <div class="panel">
+            <a class="brand-link" href="{{ url_for('index') }}">Home</a>
+            <span class="muted"> &gt; </span>
+            <a class="brand-link" href="#category-context">{{ brand.category|title }}</a>
+            <span class="muted"> &gt; </span>
+            <span>{{ brand.name }} ads</span>
+        </div>
+    </nav>
+
     <section class="hero seo-hero">
         <div class="hero-grid">
             <div class="hero-left">
@@ -141,22 +157,42 @@
         </section>
     {% endif %}
 
-    <section class="simple-grid two-col seo-info-grid">
+    <section id="category-context" class="simple-grid two-col seo-info-grid">
         <div class="panel">
-            <div class="pill">What to look for</div>
+            <div class="pill">{{ brand.category }}</div>
             <h2>{{ brand.name }} ad research</h2>
             <p class="muted">
-                RunningAds helps you research {{ brand.focus }}. Look for {{ brand.creative_angle }}
-                when comparing long-running {{ brand.name }} ads with nearby competitors.
+                RunningAds helps you research {{ brand.focus }}. For {{ brand.name }}, the most useful
+                comparison lens is {{ brand.creative_angle }}.
+            </p>
+        </div>
+
+        <div class="panel">
+            <div class="pill">Audience</div>
+            <h2>Who this page helps</h2>
+            <p class="muted">
+                These examples are especially useful for {{ brand.audience }} who want to understand
+                active creative patterns before launching or comparing campaigns.
+            </p>
+        </div>
+    </section>
+
+    <section class="simple-grid two-col seo-info-grid">
+        <div class="panel">
+            <div class="pill">Creative angle</div>
+            <h2>Patterns to compare</h2>
+            <p class="muted">
+                Use the cached previews and search results to compare {{ brand.creative_angle }} across
+                {{ brand.name }} and similar {{ brand.category }} brands.
             </p>
         </div>
 
         <div class="panel">
             <div class="pill">Market context</div>
-            <h2>Useful signals</h2>
+            <h2>{{ brand.category|title }} context</h2>
             <p class="muted">
-                These ads are most useful for {{ brand.audience }}. Market context:
-                {{ brand.market_context }}.
+                {{ brand.market_context }} This makes long-running ad examples useful signals for
+                positioning, offer structure, and creative direction.
             </p>
         </div>
     </section>
@@ -164,7 +200,7 @@
     <section class="simple-grid two-col seo-info-grid">
         <div class="panel">
             <div class="pill">Related brands</div>
-            <h2>Explore similar ad pages</h2>
+            <h2>Explore similar {{ brand.category }} pages</h2>
             <div class="brand-link-grid">
                 {% for related in related_brands %}
                     <a class="brand-link" href="{{ url_for('brand_page', brand_slug=related.slug) }}">
