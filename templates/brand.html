@@ -77,6 +77,11 @@
                 <div>
                     <h2>Recent {{ brand.name }} ad previews</h2>
                     <p>Cached examples from RunningAds brand research.</p>
+                    {% if seo_ads_cache.using_snapshot %}
+                        <p class="muted">
+                            Showing the latest saved ad examples found by RunningAds. Live availability may change.
+                        </p>
+                    {% endif %}
                 </div>
                 <a class="topbar-btn primary" href="{{ url_for('index', brand=brand.search_query) }}">
                     Search full results
@@ -153,6 +158,18 @@
                         </div>
                     </article>
                 {% endfor %}
+            </div>
+        </section>
+    {% else %}
+        <section class="seo-ad-preview-section">
+            <div class="results-header">
+                <div>
+                    <h2>{{ brand.name }} ad examples</h2>
+                    <p>Saved ad examples are not available yet. Live ad availability can change.</p>
+                </div>
+                <a class="topbar-btn primary" href="{{ url_for('index', brand=brand.search_query) }}">
+                    Search {{ brand.name }} ads
+                </a>
             </div>
         </section>
     {% endif %}

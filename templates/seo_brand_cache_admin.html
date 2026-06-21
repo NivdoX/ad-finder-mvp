@@ -20,6 +20,9 @@
         <form method="post" action="{{ url_for('refresh_stale_seo_brand_cache') }}">
             <button class="form-button" type="submit">Refresh stale SEO caches</button>
         </form>
+        <form method="post" action="{{ url_for('refresh_missing_seo_snapshots') }}">
+            <button class="secondary-button" type="submit">Refresh brands missing snapshots</button>
+        </form>
     </div>
 </div>
 
@@ -49,17 +52,45 @@
         <h3>{{ cache_summary.not_refreshed }}</h3>
         <p class="muted">Not refreshed</p>
     </div>
+    <div class="panel">
+        <div class="pill">Snapshots</div>
+        <h3>{{ cache_summary.with_snapshots }}</h3>
+        <p class="muted">Last-good snapshots</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Fallback</div>
+        <h3>{{ cache_summary.using_fallback }}</h3>
+        <p class="muted">Using saved data</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Missing</div>
+        <h3>{{ cache_summary.missing_snapshots }}</h3>
+        <p class="muted">Missing snapshots</p>
+    </div>
 </div>
 
 <div class="simple-grid">
     <div class="panel">
+        <form
+            id="refresh-selected-seo-brands"
+            method="post"
+            action="{{ url_for('refresh_selected_seo_brand_cache') }}"
+        ></form>
+        <p>
+            <button class="secondary-button" type="submit" form="refresh-selected-seo-brands">
+                Refresh selected brands
+            </button>
+        </p>
         <table class="table">
             <thead>
                 <tr>
+                    <th>Select</th>
                     <th>Brand</th>
                     <th>Slug</th>
                     <th>Status</th>
+                    <th>Page source</th>
                     <th>Previews</th>
+                    <th>Snapshot</th>
                     <th>Country</th>
                     <th>Fetched</th>
                     <th>Expires</th>
@@ -70,6 +101,15 @@
             <tbody>
                 {% for row in cache_rows %}
                     <tr>
+                        <td>
+                            <input
+                                type="checkbox"
+                                name="brand_slugs"
+                                value="{{ row.slug }}"
+                                form="refresh-selected-seo-brands"
+                                aria-label="Select {{ row.name }} for cache refresh"
+                            >
+                        </td>
                         <td>{{ row.name }}</td>
                         <td>{{ row.slug }}</td>
                         <td>
@@ -79,10 +119,31 @@
                             {% endif %}
                         </td>
                         <td>
+                            {% if row.data_source == 'fresh_cache' %}
+                                <span class="pill cache-status preview_available">Fresh cache</span>
+                            {% elif row.data_source == 'snapshot' %}
+                                <span class="pill cache-status expired">Fallback snapshot</span>
+                            {% elif row.data_source == 'preserved_cache' %}
+                                <span class="pill cache-status expired">Preserved cache</span>
+                            {% else %}
+                                <span class="pill cache-status not_refreshed">Empty</span>
+                            {% endif %}
+                        </td>
+                        <td>
                             {% if row.preview_count is not none %}
                                 {{ row.preview_count }}
                             {% else %}
                                 -
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if row.snapshot_captured_at %}
+                                {{ row.snapshot_captured_at }}
+                                <div class="muted">
+                                    {{ row.snapshot_ad_count }} ads / {{ row.snapshot_image_count }} images
+                                </div>
+                            {% else %}
+                                <span class="muted">No snapshot</span>
                             {% endif %}
                         </td>
                         <td>{{ row.country or '-' }}</td>
