@@ -3576,6 +3576,73 @@ def index():
     )
 
 
+@app.route("/sample-results")
+def sample_results():
+    sample_brands = [
+        {
+            "name": "Manscaped",
+            "usefulness": "See how a direct-to-consumer brand can test distinct hooks while keeping its core offer recognizable.",
+            "ads": [
+                {
+                    "days_running": 84,
+                    "start_date": "January 8, 2026",
+                    "creative_angle": "Problem-solution framing for a familiar grooming frustration.",
+                    "marketer_learning": "Lead with a specific pain point before introducing the product as the simple fix.",
+                },
+                {
+                    "days_running": 57,
+                    "start_date": "February 4, 2026",
+                    "creative_angle": "Bundle value positioned as a complete routine.",
+                    "marketer_learning": "Packaging complementary products together can make the offer feel easier to understand and compare.",
+                },
+            ],
+        },
+        {
+            "name": "Gymshark",
+            "usefulness": "Compare creative approaches that sell both product benefits and an aspirational fitness identity.",
+            "ads": [
+                {
+                    "days_running": 73,
+                    "start_date": "January 19, 2026",
+                    "creative_angle": "Performance apparel shown through a training-focused message.",
+                    "marketer_learning": "Connect functional product details to the activity and outcome the audience cares about.",
+                },
+                {
+                    "days_running": 46,
+                    "start_date": "February 15, 2026",
+                    "creative_angle": "Social-proof-led community positioning.",
+                    "marketer_learning": "A strong community signal can reinforce belonging without replacing a clear product benefit.",
+                },
+            ],
+        },
+        {
+            "name": "Ridge",
+            "usefulness": "Study how a compact product can be differentiated through benefits, objections, and offer structure.",
+            "ads": [
+                {
+                    "days_running": 91,
+                    "start_date": "January 1, 2026",
+                    "creative_angle": "Before-and-after contrast with a bulky traditional wallet.",
+                    "marketer_learning": "A visual contrast can communicate the main benefit faster than a long feature list.",
+                },
+                {
+                    "days_running": 62,
+                    "start_date": "January 30, 2026",
+                    "creative_angle": "Risk reversal built around durability and warranty.",
+                    "marketer_learning": "Answering the durability objection directly can make a premium price easier to justify.",
+                },
+            ],
+        },
+    ]
+
+    return render_template(
+        "sample_results.html",
+        sample_brands=sample_brands,
+        seo_public_page=True,
+        canonical_url=absolute_url("/sample-results"),
+    )
+
+
 @app.route("/register", methods=["GET", "POST"])
 def register():
     next_url = request.args.get("next") or url_for("account")

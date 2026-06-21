@@ -1,0 +1,142 @@
+{% extends "layout.html" %}
+{% block title %}Sample Results - RunningAds{% endblock %}
+
+{% block meta_description %}
+<meta name="description" content="See static sample competitor ad insights from RunningAds.">
+{% endblock %}
+
+{% block analytics %}{% endblock %}
+
+{% block head_extra %}
+<style>
+    .sample-intro {
+        max-width: 920px;
+    }
+    .sample-label {
+        margin-bottom: 16px;
+    }
+    .sample-intro h1 {
+        max-width: 820px;
+    }
+    .sample-disclosure {
+        max-width: 840px;
+        color: #e2e8f0;
+        font-size: 18px;
+        line-height: 1.6;
+        font-weight: 600;
+    }
+    .sample-brand-section {
+        margin-top: 32px;
+    }
+    .sample-brand-header {
+        margin-bottom: 18px;
+    }
+    .sample-brand-header h2 {
+        margin: 0 0 8px;
+        font-size: clamp(30px, 4vw, 46px);
+        font-weight: 900;
+        letter-spacing: -0.035em;
+    }
+    .sample-brand-header p {
+        max-width: 820px;
+        margin: 0;
+        color: #cbd5e1;
+        font-size: 16px;
+        line-height: 1.6;
+        font-weight: 600;
+    }
+    .sample-ads-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .sample-ad-card .ad-brand {
+        font-size: 24px;
+    }
+    .sample-ad-card .running-text {
+        font-size: clamp(34px, 5vw, 54px);
+    }
+    .sample-insight {
+        margin-top: 18px;
+        padding-top: 18px;
+        border-top: 1px solid rgba(148, 163, 184, 0.14);
+    }
+    .sample-insight h3 {
+        margin: 0 0 6px;
+        color: #f8fafc;
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .sample-insight p {
+        margin: 0;
+        color: #cbd5e1;
+        line-height: 1.6;
+    }
+    .sample-cta {
+        margin-top: 40px;
+        text-align: center;
+    }
+    .sample-cta p {
+        max-width: 700px;
+        margin: 16px auto 0;
+    }
+    @media (max-width: 768px) {
+        .sample-ads-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<main class="page">
+    <section class="hero sample-intro">
+        <div class="pill sample-label">Illustrative sample data - Not live</div>
+        <h1>
+            See the insights behind
+            <span class="headline-accent">long-running competitor ads</span>
+        </h1>
+        <p class="sample-disclosure">
+            These are static sample results that show the type of competitor ad insights RunningAds helps you find. Live competitor searches require a paid account.
+        </p>
+    </section>
+
+    {% for brand in sample_brands %}
+        <section class="sample-brand-section" aria-labelledby="sample-brand-{{ loop.index }}">
+            <div class="sample-brand-header">
+                <h2 id="sample-brand-{{ loop.index }}">{{ brand.name }}</h2>
+                <p>{{ brand.usefulness }}</p>
+            </div>
+
+            <div class="ads-grid sample-ads-grid">
+                {% for ad in brand.ads %}
+                    <article class="ad-card sample-ad-card">
+                        <div class="card-top-row">
+                            <div class="card-badge badge-default">Static sample</div>
+                        </div>
+                        <div class="ad-brand">{{ brand.name }}</div>
+                        <div class="ad-date">Start date: {{ ad.start_date }}</div>
+                        <div class="ad-running">
+                            <span class="running-text">Running for {{ ad.days_running }} days</span>
+                        </div>
+
+                        <div class="sample-insight">
+                            <h3>Creative angle</h3>
+                            <p>{{ ad.creative_angle }}</p>
+                        </div>
+                        <div class="sample-insight">
+                            <h3>What a marketer can learn</h3>
+                            <p>{{ ad.marketer_learning }}</p>
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+        </section>
+    {% endfor %}
+
+    <section class="panel sample-cta">
+        <h2>Find patterns worth learning from</h2>
+        <a class="topbar-btn primary" href="{{ url_for('register', next='/pricing') }}">Start using RunningAds</a>
+        <p class="muted">No free live searches are available. This prevents abuse and keeps the service fast for paying users.</p>
+    </section>
+</main>
+{% endblock %}
