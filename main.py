@@ -28,7 +28,11 @@ from openai import OpenAI
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from services.ad_relevance import AdRelevanceFilter
-from services.meta_ads import MetaAdsService, MetaAdsServiceError
+from services.meta_ads import (
+    MetaAdsService,
+    MetaAdsServiceError,
+    extract_best_image_url,
+)
 from seo_brands import (
     BRAND_PAGES,
     get_brand_by_slug as get_static_brand_by_slug,
@@ -621,6 +625,26 @@ def ensure_schema():
 
                 cur.execute(
                     """
+                    SELECT id, ads_json, image_count
+                    FROM seo_brand_ad_snapshots
+                    """
+                )
+                for snapshot_row in cur.fetchall():
+                    actual_image_count = count_snapshot_images(parse_ads_json(snapshot_row[1]))
+                    if actual_image_count == int(snapshot_row[2] or 0):
+                        continue
+                    cur.execute(
+                        """
+                        UPDATE seo_brand_ad_snapshots
+                        SET image_count = %s,
+                            updated_at = NOW()
+                        WHERE id = %s
+                        """,
+                        (actual_image_count, snapshot_row[0]),
+                    )
+
+                cur.execute(
+                    """
                     INSERT INTO users (email, role, full_access, is_paid, plan, subscription_status)
                     VALUES (%s, 'admin', TRUE, TRUE, 'admin', 'active')
                     ON CONFLICT (email)
@@ -1159,7 +1183,7 @@ def prepare_seo_ad_preview(ad, fallback_brand_name: str, brand_slug: str):
     )
     ad_text = strip_unresolved_placeholders(ad.get("ad_text"))
     headline = strip_unresolved_placeholders(ad.get("headline"))
-    media_url = strip_unresolved_placeholders(ad.get("media_url"))
+    media_url = extract_best_image_url(ad)
     snapshot_url = strip_unresolved_placeholders(ad.get("snapshot_url"))
 
     prepared = dict(ad)
@@ -1168,6 +1192,20 @@ def prepare_seo_ad_preview(ad, fallback_brand_name: str, brand_slug: str):
     prepared["media_url"] = media_url
     prepared["snapshot_url"] = snapshot_url
     return prepared
+
+
+def select_seo_preview_ads(ads):
+    normalized_ads = []
+    for ad in ads if isinstance(ads, list) else []:
+        if not isinstance(ad, dict):
+            continue
+        normalized = dict(ad)
+        normalized["media_url"] = extract_best_image_url(ad)
+        normalized_ads.append(normalized)
+
+    image_ads = [ad for ad in normalized_ads if ad.get("media_url")]
+    text_only_ads = [ad for ad in normalized_ads if not ad.get("media_url")]
+    return (image_ads + text_only_ads)[:SEO_BRAND_PREVIEW_COUNT]
 
 
 SEO_SNAPSHOT_AD_FIELDS = (
@@ -1195,9 +1233,7 @@ def parse_ads_json(value):
 
 def build_seo_snapshot_ads(brand_name: str, ads):
     snapshot_ads = []
-    for ad in (ads if isinstance(ads, list) else [])[:SEO_BRAND_PREVIEW_COUNT]:
-        if not isinstance(ad, dict):
-            continue
+    for ad in select_seo_preview_ads(ads):
         compact = {}
         for field in SEO_SNAPSHOT_AD_FIELDS:
             value = ad.get(field)
@@ -1228,7 +1264,7 @@ def count_snapshot_images(ads):
     return sum(
         1
         for ad in (ads if isinstance(ads, list) else [])
-        if isinstance(ad, dict) and strip_unresolved_placeholders(ad.get("media_url"))
+        if isinstance(ad, dict) and extract_best_image_url(ad)
     )
 
 
@@ -1319,7 +1355,7 @@ def get_cached_seo_brand_ads(brand_slug: str, fallback_brand_name: str = ""):
                 cache_ads = parse_ads_json(cache_row[0]) if cache_row else []
                 snapshot_ads = parse_ads_json(snapshot_row[0]) if snapshot_row else []
                 cache_image_count = count_snapshot_images(cache_ads)
-                snapshot_image_count = int(snapshot_row[2] or 0) if snapshot_row else 0
+                snapshot_image_count = count_snapshot_images(snapshot_ads)
                 cache_is_fresh = bool(
                     cache_row
                     and cache_ads
@@ -1440,17 +1476,18 @@ def get_seo_brand_snapshot_by_slug():
                 cur.execute(
                     """
                     SELECT brand_slug, brand_name, source_query, creative_angle,
-                           ad_count, image_count, captured_at, updated_at
+                           ad_count, image_count, captured_at, updated_at, ads_json
                     FROM seo_brand_ad_snapshots
                     """
                 )
                 for row in cur.fetchall():
+                    snapshot_ads = parse_ads_json(row[8])
                     snapshots[row[0]] = {
                         "brand_name": row[1],
                         "source_query": row[2],
                         "creative_angle": row[3],
-                        "ad_count": int(row[4] or 0),
-                        "image_count": int(row[5] or 0),
+                        "ad_count": len(snapshot_ads),
+                        "image_count": count_snapshot_images(snapshot_ads),
                         "captured_at": row[6],
                         "updated_at": row[7],
                     }
@@ -1495,6 +1532,7 @@ def get_seo_brand_cache_admin_rows():
         "with_snapshots": 0,
         "using_fallback": 0,
         "missing_snapshots": 0,
+        "missing_snapshot_images": 0,
     }
     now = utcnow()
 
@@ -1509,6 +1547,8 @@ def get_seo_brand_cache_admin_rows():
 
         if snapshot:
             summary["with_snapshots"] += 1
+            if int(snapshot.get("ad_count") or 0) > 0 and int(snapshot.get("image_count") or 0) == 0:
+                summary["missing_snapshot_images"] += 1
         else:
             summary["missing_snapshots"] += 1
         if data_source in ("snapshot", "preserved_cache"):
@@ -3160,7 +3200,7 @@ def promote_seo_brand_candidate(candidate):
 
 def save_seo_brand_ads_cache(brand, ads: list, country: str = "NO", result_count: int | None = None):
     ads = ads if isinstance(ads, list) else []
-    stored_ads = ads[:SEO_BRAND_PREVIEW_COUNT]
+    stored_ads = select_seo_preview_ads(ads)
     result_count = len(ads) if result_count is None else int(result_count or 0)
     preview_count = min(len(stored_ads), SEO_BRAND_PREVIEW_COUNT)
     fetched_at = utcnow()
@@ -3503,6 +3543,38 @@ def get_missing_snapshot_refresh_targets(limit: int = SEO_STALE_CACHE_REFRESH_LI
     ]
     targets.sort(
         key=lambda target: target["cache"].get("updated_at")
+        or datetime.min.replace(tzinfo=timezone.utc)
+    )
+    return {
+        "brands_checked": len(published_brands),
+        "eligible_count": len(targets),
+        "targets": targets[:limit],
+        "limit": limit,
+    }
+
+
+def get_missing_snapshot_image_refresh_targets(limit: int = SEO_STALE_CACHE_REFRESH_LIMIT):
+    published_brands = get_published_seo_brands()
+    snapshots_by_slug = get_seo_brand_snapshot_by_slug()
+    cache_by_slug = get_seo_brand_cache_by_slug()
+    targets = []
+
+    for brand in published_brands:
+        snapshot = snapshots_by_slug.get(brand["slug"])
+        if not snapshot:
+            continue
+        if int(snapshot.get("ad_count") or 0) <= 0 or int(snapshot.get("image_count") or 0) > 0:
+            continue
+        targets.append(
+            {
+                "brand": brand,
+                "cache": cache_by_slug.get(brand["slug"], {}),
+                "snapshot": snapshot,
+            }
+        )
+
+    targets.sort(
+        key=lambda target: target["snapshot"].get("captured_at")
         or datetime.min.replace(tzinfo=timezone.utc)
     )
     return {
@@ -5318,6 +5390,20 @@ def refresh_missing_seo_snapshots():
         flash(format_seo_cache_refresh_summary("Missing snapshot refresh", summary))
     except Exception as exc:
         flash(f"Missing snapshot refresh failed: {str(exc)}")
+    return redirect(url_for("seo_brand_cache_admin"))
+
+
+@app.route("/admin/seo-brand-cache/refresh-missing-images", methods=["POST"])
+@admin_required
+def refresh_missing_seo_snapshot_images():
+    try:
+        summary = refresh_seo_brand_cache_targets(
+            get_missing_snapshot_image_refresh_targets(),
+            run_type="seo_cache_refresh_missing_images",
+        )
+        flash(format_seo_cache_refresh_summary("Missing snapshot image refresh", summary))
+    except Exception as exc:
+        flash(f"Missing snapshot image refresh failed: {str(exc)}")
     return redirect(url_for("seo_brand_cache_admin"))
 
 

@@ -495,9 +495,33 @@ body {
     margin-bottom: 16px;
 }
 
+.seo-ad-media-shell {
+    position: relative;
+    aspect-ratio: 4 / 3;
+}
+
 .seo-ad-media {
     aspect-ratio: 4 / 3;
+    height: 100%;
     object-fit: cover;
+}
+
+.seo-ad-placeholder-image-error {
+    display: none;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    aspect-ratio: auto;
+}
+
+.seo-ad-media-shell.image-unavailable .seo-ad-media {
+    display: none;
+}
+
+.seo-ad-media-shell.image-unavailable .seo-ad-placeholder-image-error {
+    display: flex;
 }
 
 .seo-ad-placeholder {

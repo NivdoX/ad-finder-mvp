@@ -7,6 +7,175 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 import requests
 
 
+IMAGE_URL_KEYS = (
+    "originalImageUrl",
+    "original_image_url",
+    "resizedImageUrl",
+    "resized_image_url",
+    "imageUrl",
+    "image_url",
+    "previewImageUrl",
+    "preview_image_url",
+    "thumbnailUrl",
+    "thumbnail_url",
+    "videoThumbnailUrl",
+    "video_thumbnail_url",
+    "videoPreviewImageUrl",
+    "video_preview_image_url",
+    "posterUrl",
+    "poster_url",
+    "mediaUrl",
+    "media_url",
+    "image",
+    "poster",
+    "picture",
+    "thumbnail",
+)
+
+IMAGE_COLLECTION_KEYS = (
+    "images",
+    "imageUrls",
+    "image_urls",
+    "imageAssets",
+    "image_assets",
+)
+
+NESTED_MEDIA_KEYS = (
+    "snapshot",
+    "adSnapshot",
+    "ad_snapshot",
+    "creative",
+    "adCreative",
+    "ad_creative",
+    "cards",
+    "carouselCards",
+    "carousel_cards",
+    "media",
+    "asset",
+    "assets",
+    "videos",
+)
+
+NON_IMAGE_EXTENSIONS = (
+    ".mp4",
+    ".m4v",
+    ".mov",
+    ".webm",
+    ".avi",
+    ".m3u8",
+    ".mp3",
+    ".wav",
+)
+
+
+def normalize_image_url(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+
+    url = value.strip()
+    if not url or any(character.isspace() for character in url):
+        return ""
+
+    if url.startswith("//"):
+        url = f"https:{url}"
+
+    lowered = url.lower()
+    if lowered in {"none", "null", "undefined", "about:blank"}:
+        return ""
+
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return ""
+
+    path = parsed.path.lower().rstrip("/")
+    host = parsed.netloc.lower().split(":", 1)[0]
+    if host in {"facebook.com", "www.facebook.com", "m.facebook.com"} and path.startswith("/ads/library"):
+        return ""
+    if path.endswith(NON_IMAGE_EXTENSIONS):
+        return ""
+
+    query = parsed.query.lower()
+    if any(marker in query for marker in ("video/mp4", "video%2fmp4", "application/vnd.apple.mpegurl")):
+        return ""
+
+    return url
+
+
+def is_usable_image_url(value: Any) -> bool:
+    return bool(normalize_image_url(value))
+
+
+def _image_url_from_value(value: Any, depth: int = 0) -> str:
+    if depth > 6:
+        return ""
+    if isinstance(value, str):
+        return normalize_image_url(value)
+    if isinstance(value, list):
+        for item in value:
+            image_url = _image_url_from_value(item, depth + 1)
+            if image_url:
+                return image_url
+        return ""
+    if not isinstance(value, dict):
+        return ""
+
+    for key in (*IMAGE_URL_KEYS, "url", "src"):
+        image_url = _image_url_from_value(value.get(key), depth + 1)
+        if image_url:
+            return image_url
+
+    for key in IMAGE_COLLECTION_KEYS:
+        image_url = _image_url_from_value(value.get(key), depth + 1)
+        if image_url:
+            return image_url
+
+    return ""
+
+
+def _extract_image_from_mapping(item: Dict[str, Any], depth: int = 0) -> str:
+    if depth > 6:
+        return ""
+
+    for key in IMAGE_URL_KEYS:
+        image_url = _image_url_from_value(item.get(key), depth + 1)
+        if image_url:
+            return image_url
+
+    for key in IMAGE_COLLECTION_KEYS:
+        image_url = _image_url_from_value(item.get(key), depth + 1)
+        if image_url:
+            return image_url
+
+    media_type = str(item.get("type") or item.get("mediaType") or item.get("media_type") or "").lower()
+    if "image" in media_type:
+        for key in ("url", "src"):
+            image_url = _image_url_from_value(item.get(key), depth + 1)
+            if image_url:
+                return image_url
+
+    for key in NESTED_MEDIA_KEYS:
+        nested = item.get(key)
+        if isinstance(nested, dict):
+            image_url = _extract_image_from_mapping(nested, depth + 1)
+            if image_url:
+                return image_url
+        elif isinstance(nested, list):
+            for nested_item in nested:
+                if not isinstance(nested_item, dict):
+                    continue
+                image_url = _extract_image_from_mapping(nested_item, depth + 1)
+                if image_url:
+                    return image_url
+
+    return ""
+
+
+def extract_best_image_url(item: Any) -> str:
+    if not isinstance(item, dict):
+        return ""
+    return _extract_image_from_mapping(item)
+
+
 class MetaAdsServiceError(Exception):
     pass
 
@@ -400,27 +569,7 @@ class MetaAdsService:
             return None
 
     def _extract_media_url(self, item: Dict[str, Any]) -> str:
-        images = item.get("images")
-        if isinstance(images, list) and images:
-            first_image = images[0]
-            if isinstance(first_image, str) and first_image.strip():
-                return first_image.strip()
-
-        videos = item.get("videos")
-        if isinstance(videos, list) and videos:
-            first_video = videos[0]
-            if isinstance(first_video, str) and first_video.strip():
-                return first_video.strip()
-
-        return self._first_non_empty(
-            item.get("originalImageUrl"),
-            item.get("imageUrl"),
-            item.get("image_url"),
-            item.get("videoHdUrl"),
-            item.get("videoSdUrl"),
-            item.get("video_url"),
-            "",
-        ) or ""
+        return extract_best_image_url(item)
 
     def _force_english_locale(self, url: str) -> str:
         if not url:

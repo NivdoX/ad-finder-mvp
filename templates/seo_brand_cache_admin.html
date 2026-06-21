@@ -23,6 +23,9 @@
         <form method="post" action="{{ url_for('refresh_missing_seo_snapshots') }}">
             <button class="secondary-button" type="submit">Refresh brands missing snapshots</button>
         </form>
+        <form method="post" action="{{ url_for('refresh_missing_seo_snapshot_images') }}">
+            <button class="secondary-button" type="submit">Refresh brands missing images</button>
+        </form>
     </div>
 </div>
 
@@ -66,6 +69,11 @@
         <div class="pill">Missing</div>
         <h3>{{ cache_summary.missing_snapshots }}</h3>
         <p class="muted">Missing snapshots</p>
+    </div>
+    <div class="panel">
+        <div class="pill">No images</div>
+        <h3>{{ cache_summary.missing_snapshot_images }}</h3>
+        <p class="muted">Snapshots with ads but no images</p>
     </div>
 </div>
 

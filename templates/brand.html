@@ -100,17 +100,27 @@
                         </div>
 
                         {% if ad.media_url %}
-                            <div class="ad-media-wrap seo-ad-media-wrap">
+                            <div class="ad-media-wrap seo-ad-media-wrap seo-ad-media-shell">
                                 <img
                                     src="{{ ad.media_url }}"
                                     alt="Ad preview for {{ ad.display_page_name }}"
                                     class="ad-media seo-ad-media"
                                     loading="lazy"
+                                    onerror="this.closest('.seo-ad-media-shell').classList.add('image-unavailable'); this.setAttribute('aria-hidden', 'true'); this.nextElementSibling.removeAttribute('aria-hidden');"
                                 >
+                                <div class="seo-ad-placeholder seo-ad-placeholder-image-error" aria-hidden="true">
+                                    <div class="visual-pill">Image unavailable</div>
+                                    <div class="seo-ad-placeholder-brand">{{ ad.display_page_name }}</div>
+                                    {% if ad.days_running is defined and ad.days_running is not none %}
+                                        <div class="seo-ad-placeholder-running">
+                                            Running for {{ ad.days_running }} day{% if ad.days_running != 1 %}s{% endif %}
+                                        </div>
+                                    {% endif %}
+                                </div>
                             </div>
                         {% else %}
                             <div class="seo-ad-placeholder">
-                                <div class="visual-pill">Cached ad</div>
+                                <div class="visual-pill">Image unavailable</div>
                                 <div class="seo-ad-placeholder-brand">{{ ad.display_page_name }}</div>
                                 {% if ad.days_running is defined and ad.days_running is not none %}
                                     <div class="seo-ad-placeholder-running">
