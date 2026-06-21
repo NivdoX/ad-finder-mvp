@@ -67,6 +67,30 @@ NON_IMAGE_EXTENSIONS = (
     ".wav",
 )
 
+IMAGE_URL_EXPIRY_GRACE_SECONDS = 300
+
+
+def _facebook_cdn_url_is_expired(parsed) -> bool:
+    host = parsed.netloc.lower().split(":", 1)[0]
+    if not (host == "fbcdn.net" or host.endswith(".fbcdn.net")):
+        return False
+
+    query = {
+        key.lower(): value
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+    }
+    expiry_value = (query.get("oe") or "").strip()
+    if not expiry_value:
+        return False
+
+    try:
+        expires_at = int(expiry_value, 16)
+    except ValueError:
+        return False
+
+    now = int(datetime.now(timezone.utc).timestamp())
+    return expires_at <= now + IMAGE_URL_EXPIRY_GRACE_SECONDS
+
 
 def normalize_image_url(value: Any) -> str:
     if not isinstance(value, str):
@@ -90,6 +114,8 @@ def normalize_image_url(value: Any) -> str:
     path = parsed.path.lower().rstrip("/")
     host = parsed.netloc.lower().split(":", 1)[0]
     if host in {"facebook.com", "www.facebook.com", "m.facebook.com"} and path.startswith("/ads/library"):
+        return ""
+    if _facebook_cdn_url_is_expired(parsed):
         return ""
     if path.endswith(NON_IMAGE_EXTENSIONS):
         return ""

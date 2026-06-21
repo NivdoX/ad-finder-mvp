@@ -221,6 +221,7 @@ def ensure_schema():
                         ads_json TEXT NOT NULL DEFAULT '[]',
                         ad_count INTEGER DEFAULT 0,
                         image_count INTEGER DEFAULT 0,
+                        quality_status TEXT DEFAULT 'quality_empty',
                         captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -394,6 +395,7 @@ def ensure_schema():
                 cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS ads_json TEXT DEFAULT '[]';")
                 cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS ad_count INTEGER DEFAULT 0;")
                 cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS image_count INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS quality_status TEXT DEFAULT 'quality_empty';")
                 cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS captured_at TIMESTAMPTZ DEFAULT NOW();")
                 cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
                 cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
@@ -602,13 +604,19 @@ def ensure_schema():
                     snapshot_ads = build_seo_snapshot_ads(cache_row[1], cached_ads)
                     if not snapshot_ads:
                         continue
+                    snapshot_image_count = count_snapshot_images(snapshot_ads)
+                    snapshot_quality_status = get_seo_snapshot_quality_status(
+                        len(snapshot_ads),
+                        snapshot_image_count,
+                    )
                     cur.execute(
                         """
                         INSERT INTO seo_brand_ad_snapshots (
                             brand_slug, brand_name, source_query, creative_angle,
-                            ads_json, ad_count, image_count, captured_at, updated_at
+                            ads_json, ad_count, image_count, quality_status,
+                            captured_at, updated_at
                         )
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
                         ON CONFLICT (brand_slug) DO NOTHING
                         """,
                         (
@@ -618,29 +626,47 @@ def ensure_schema():
                             cache_row[5],
                             json.dumps(snapshot_ads),
                             len(snapshot_ads),
-                            count_snapshot_images(snapshot_ads),
+                            snapshot_image_count,
+                            snapshot_quality_status,
                             cache_row[4],
                         ),
                     )
 
                 cur.execute(
                     """
-                    SELECT id, ads_json, image_count
+                    SELECT id, ads_json, ad_count, image_count, quality_status
                     FROM seo_brand_ad_snapshots
                     """
                 )
                 for snapshot_row in cur.fetchall():
-                    actual_image_count = count_snapshot_images(parse_ads_json(snapshot_row[1]))
-                    if actual_image_count == int(snapshot_row[2] or 0):
+                    snapshot_ads = parse_ads_json(snapshot_row[1])
+                    actual_ad_count = len(snapshot_ads)
+                    actual_image_count = count_snapshot_images(snapshot_ads)
+                    quality_status = get_seo_snapshot_quality_status(
+                        actual_ad_count,
+                        actual_image_count,
+                    )
+                    if (
+                        actual_ad_count == int(snapshot_row[2] or 0)
+                        and actual_image_count == int(snapshot_row[3] or 0)
+                        and quality_status == (snapshot_row[4] or "quality_empty")
+                    ):
                         continue
                     cur.execute(
                         """
                         UPDATE seo_brand_ad_snapshots
-                        SET image_count = %s,
+                        SET ad_count = %s,
+                            image_count = %s,
+                            quality_status = %s,
                             updated_at = NOW()
                         WHERE id = %s
                         """,
-                        (actual_image_count, snapshot_row[0]),
+                        (
+                            actual_ad_count,
+                            actual_image_count,
+                            quality_status,
+                            snapshot_row[0],
+                        ),
                     )
 
                 cur.execute(
@@ -1268,19 +1294,156 @@ def count_snapshot_images(ads):
     )
 
 
+def get_seo_snapshot_quality_status(ad_count: int, image_count: int, failed: bool = False):
+    if failed:
+        return "quality_failed"
+    if int(image_count or 0) > 0:
+        return "quality_good_images"
+    if int(ad_count or 0) > 0:
+        return "quality_ads_no_images"
+    return "quality_empty"
+
+
+def select_seo_brand_saved_data(cached, snapshot, now=None):
+    now = now or utcnow()
+    cached = cached or {}
+    snapshot = snapshot or {}
+    cache_ads = select_seo_preview_ads(cached.get("ads") or [])
+    snapshot_ads = select_seo_preview_ads(snapshot.get("ads") or [])
+    cache_image_count = count_snapshot_images(cache_ads)
+    snapshot_image_count = count_snapshot_images(snapshot_ads)
+    cache_is_fresh = bool(
+        cache_ads
+        and cached.get("refresh_status") == "success"
+        and cached.get("expires_at")
+        and cached["expires_at"] > now
+    )
+    snapshot_captured_at = snapshot.get("captured_at")
+    snapshot_is_stale = bool(
+        snapshot_ads
+        and (
+            not snapshot_captured_at
+            or snapshot_captured_at < now - timedelta(hours=SEO_BRAND_CACHE_TTL_HOURS)
+        )
+    )
+
+    if (
+        cache_is_fresh
+        and cache_image_count > 0
+        and cache_image_count >= snapshot_image_count
+    ):
+        selected_ads = cache_ads
+        data_source = "fresh_cache"
+        source_captured_at = cached.get("fetched_at")
+    elif snapshot_image_count > 0:
+        selected_ads = snapshot_ads
+        data_source = "stale_snapshot" if snapshot_is_stale else "fallback_snapshot"
+        source_captured_at = snapshot_captured_at
+    elif cache_image_count > 0:
+        selected_ads = cache_ads
+        data_source = "fresh_cache" if cache_is_fresh else "stale_cache"
+        source_captured_at = cached.get("fetched_at")
+    elif snapshot_ads:
+        selected_ads = snapshot_ads
+        data_source = "stale_snapshot" if snapshot_is_stale else "fallback_snapshot"
+        source_captured_at = snapshot_captured_at
+    elif cache_ads:
+        selected_ads = cache_ads
+        data_source = "fresh_cache" if cache_is_fresh else "stale_cache"
+        source_captured_at = cached.get("fetched_at")
+    else:
+        selected_ads = []
+        data_source = "empty"
+        source_captured_at = None
+
+    preview_count = len(selected_ads)
+    usable_image_count = count_snapshot_images(selected_ads)
+    failed = bool(not selected_ads and cached.get("refresh_status") == "failed")
+    quality_status = get_seo_snapshot_quality_status(
+        preview_count,
+        usable_image_count,
+        failed=failed,
+    )
+    snapshot_quality_status = get_seo_snapshot_quality_status(
+        len(snapshot_ads),
+        snapshot_image_count,
+    )
+    return {
+        "ads": selected_ads,
+        "data_source": data_source,
+        "source_captured_at": source_captured_at,
+        "preview_count": preview_count,
+        "usable_image_count": usable_image_count,
+        "quality_status": quality_status,
+        "cache_is_fresh": cache_is_fresh,
+        "snapshot_is_stale": snapshot_is_stale,
+        "snapshot_ad_count": len(snapshot_ads),
+        "snapshot_image_count": snapshot_image_count,
+        "snapshot_quality_status": snapshot_quality_status,
+        "using_snapshot": data_source in ("fallback_snapshot", "stale_snapshot"),
+        "using_saved_data": bool(selected_ads and data_source != "fresh_cache"),
+        "needs_images": bool(preview_count > 0 and usable_image_count < preview_count),
+        "seo_ready": bool(snapshot_ads and snapshot_image_count > 0),
+        "stale_but_usable": bool(
+            data_source in ("stale_snapshot", "stale_cache")
+            and usable_image_count > 0
+        ),
+    }
+
+
 def upsert_last_good_seo_snapshot(cur, brand, ads, captured_at):
     snapshot_ads = build_seo_snapshot_ads(brand.get("name") or "", ads)
     if not snapshot_ads:
         return False
 
     image_count = count_snapshot_images(snapshot_ads)
+    quality_status = get_seo_snapshot_quality_status(len(snapshot_ads), image_count)
+    cur.execute(
+        """
+        SELECT ads_json
+        FROM seo_brand_ad_snapshots
+        WHERE brand_slug = %s
+        FOR UPDATE
+        """,
+        (brand["slug"],),
+    )
+    existing_row = cur.fetchone()
+    if existing_row:
+        existing_ads = parse_ads_json(existing_row[0])
+        existing_ad_count = len(existing_ads)
+        existing_image_count = count_snapshot_images(existing_ads)
+        existing_quality_status = get_seo_snapshot_quality_status(
+            existing_ad_count,
+            existing_image_count,
+        )
+        cur.execute(
+            """
+            UPDATE seo_brand_ad_snapshots
+            SET ad_count = %s,
+                image_count = %s,
+                quality_status = %s
+            WHERE brand_slug = %s
+            """,
+            (
+                existing_ad_count,
+                existing_image_count,
+                existing_quality_status,
+                brand["slug"],
+            ),
+        )
+        if existing_image_count > image_count:
+            return False
+        if existing_image_count == image_count and existing_ad_count > len(snapshot_ads):
+            return False
+
     cur.execute(
         """
         INSERT INTO seo_brand_ad_snapshots (
             brand_slug, brand_name, source_query, creative_angle,
-            ads_json, ad_count, image_count, captured_at, updated_at
+            ads_json, ad_count, image_count, quality_status,
+            captured_at, updated_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
         ON CONFLICT (brand_slug)
         DO UPDATE SET
             brand_name = EXCLUDED.brand_name,
@@ -1289,6 +1452,7 @@ def upsert_last_good_seo_snapshot(cur, brand, ads, captured_at):
             ads_json = EXCLUDED.ads_json,
             ad_count = EXCLUDED.ad_count,
             image_count = EXCLUDED.image_count,
+            quality_status = EXCLUDED.quality_status,
             captured_at = EXCLUDED.captured_at,
             updated_at = NOW()
         WHERE EXCLUDED.image_count > COALESCE(seo_brand_ad_snapshots.image_count, 0)
@@ -1305,6 +1469,7 @@ def upsert_last_good_seo_snapshot(cur, brand, ads, captured_at):
             json.dumps(snapshot_ads),
             len(snapshot_ads),
             image_count,
+            quality_status,
             captured_at,
         ),
     )
@@ -1352,64 +1517,50 @@ def get_cached_seo_brand_ads(brand_slug: str, fallback_brand_name: str = ""):
                 )
                 snapshot_row = cur.fetchone()
 
-                cache_ads = parse_ads_json(cache_row[0]) if cache_row else []
-                snapshot_ads = parse_ads_json(snapshot_row[0]) if snapshot_row else []
-                cache_image_count = count_snapshot_images(cache_ads)
-                snapshot_image_count = count_snapshot_images(snapshot_ads)
-                cache_is_fresh = bool(
-                    cache_row
-                    and cache_ads
-                    and cache_row[5] == "success"
-                    and cache_row[4]
-                    and cache_row[4] > utcnow()
-                )
-                fresh_cache_is_weaker = bool(
-                    cache_is_fresh
-                    and snapshot_ads
-                    and snapshot_image_count > cache_image_count
-                )
-
-                using_snapshot = bool(snapshot_ads and (not cache_is_fresh or fresh_cache_is_weaker))
-                if cache_is_fresh and not fresh_cache_is_weaker:
-                    selected_ads = cache_ads
-                    data_source = "fresh_cache"
-                    source_captured_at = cache_row[3]
-                    brand_name = cache_row[7] or fallback_brand_name
-                elif using_snapshot:
-                    selected_ads = snapshot_ads
-                    data_source = "snapshot"
-                    source_captured_at = snapshot_row[3]
+                cached = {
+                    "ads": parse_ads_json(cache_row[0]) if cache_row else [],
+                    "fetched_at": cache_row[3] if cache_row else None,
+                    "expires_at": cache_row[4] if cache_row else None,
+                    "refresh_status": cache_row[5] if cache_row else None,
+                }
+                snapshot = {
+                    "ads": parse_ads_json(snapshot_row[0]) if snapshot_row else [],
+                    "captured_at": snapshot_row[3] if snapshot_row else None,
+                }
+                page_state = select_seo_brand_saved_data(cached, snapshot)
+                if page_state["using_snapshot"]:
                     brand_name = snapshot_row[5] or fallback_brand_name
-                elif cache_ads:
-                    selected_ads = cache_ads
-                    data_source = "preserved_cache"
-                    source_captured_at = cache_row[3]
+                elif cache_row:
                     brand_name = cache_row[7] or fallback_brand_name
                 else:
-                    selected_ads = []
-                    data_source = "empty"
-                    source_captured_at = None
                     brand_name = fallback_brand_name
 
                 preview_ads = [
                     prepare_seo_ad_preview(ad, brand_name, brand_slug)
-                    for ad in selected_ads[:SEO_BRAND_PREVIEW_COUNT]
+                    for ad in page_state["ads"]
                 ]
                 return {
                     "ads": preview_ads,
                     "result_count": int(cache_row[1] or 0) if cache_row else 0,
                     "preview_count": len(preview_ads),
+                    "usable_image_count": page_state["usable_image_count"],
                     "fetched_at": cache_row[3] if cache_row else None,
                     "expires_at": cache_row[4] if cache_row else None,
                     "refresh_status": cache_row[5] if cache_row else None,
                     "last_error": cache_row[6] if cache_row else None,
-                    "data_source": data_source,
-                    "using_snapshot": data_source in ("snapshot", "preserved_cache"),
-                    "source_captured_at": source_captured_at,
+                    "data_source": page_state["data_source"],
+                    "using_snapshot": page_state["using_snapshot"],
+                    "using_saved_data": page_state["using_saved_data"],
+                    "source_captured_at": page_state["source_captured_at"],
                     "snapshot_captured_at": snapshot_row[3] if snapshot_row else None,
-                    "snapshot_ad_count": int(snapshot_row[1] or 0) if snapshot_row else 0,
-                    "snapshot_image_count": snapshot_image_count,
+                    "snapshot_ad_count": page_state["snapshot_ad_count"],
+                    "snapshot_image_count": page_state["snapshot_image_count"],
                     "snapshot_source_query": snapshot_row[4] if snapshot_row else None,
+                    "snapshot_is_stale": page_state["snapshot_is_stale"],
+                    "quality_status": page_state["quality_status"],
+                    "snapshot_quality_status": page_state["snapshot_quality_status"],
+                    "seo_ready": page_state["seo_ready"],
+                    "needs_images": page_state["needs_images"],
                 }
     except Exception as exc:
         print("SEO brand cache read error:", str(exc))
@@ -1417,17 +1568,24 @@ def get_cached_seo_brand_ads(brand_slug: str, fallback_brand_name: str = ""):
             "ads": [],
             "result_count": 0,
             "preview_count": 0,
+            "usable_image_count": 0,
             "fetched_at": None,
             "expires_at": None,
             "refresh_status": "error",
             "last_error": str(exc),
             "data_source": "empty",
             "using_snapshot": False,
+            "using_saved_data": False,
             "source_captured_at": None,
             "snapshot_captured_at": None,
             "snapshot_ad_count": 0,
             "snapshot_image_count": 0,
             "snapshot_source_query": None,
+            "snapshot_is_stale": False,
+            "quality_status": "quality_failed",
+            "snapshot_quality_status": "quality_empty",
+            "seo_ready": False,
+            "needs_images": False,
         }
     finally:
         if conn:
@@ -1461,6 +1619,7 @@ def get_seo_brand_cache_by_slug():
                         "updated_at": row[8],
                         "ad_count": len(cached_ads),
                         "image_count": count_snapshot_images(cached_ads),
+                        "ads": cached_ads,
                     }
     finally:
         conn.close()
@@ -1476,7 +1635,8 @@ def get_seo_brand_snapshot_by_slug():
                 cur.execute(
                     """
                     SELECT brand_slug, brand_name, source_query, creative_angle,
-                           ad_count, image_count, captured_at, updated_at, ads_json
+                           ad_count, image_count, captured_at, updated_at, ads_json,
+                           quality_status
                     FROM seo_brand_ad_snapshots
                     """
                 )
@@ -1490,6 +1650,12 @@ def get_seo_brand_snapshot_by_slug():
                         "image_count": count_snapshot_images(snapshot_ads),
                         "captured_at": row[6],
                         "updated_at": row[7],
+                        "ads": snapshot_ads,
+                        "stored_quality_status": row[9] or "quality_empty",
+                        "quality_status": get_seo_snapshot_quality_status(
+                            len(snapshot_ads),
+                            count_snapshot_images(snapshot_ads),
+                        ),
                     }
     finally:
         conn.close()
@@ -1497,25 +1663,7 @@ def get_seo_brand_snapshot_by_slug():
 
 
 def get_seo_page_data_source(cached, snapshot, now):
-    cache_is_fresh = bool(
-        cached
-        and int(cached.get("ad_count") or 0) > 0
-        and cached.get("refresh_status") == "success"
-        and cached.get("expires_at")
-        and cached["expires_at"] > now
-    )
-    cache_is_weaker = bool(
-        cache_is_fresh
-        and snapshot
-        and int(snapshot.get("image_count") or 0) > int(cached.get("image_count") or 0)
-    )
-    if cache_is_fresh and not cache_is_weaker:
-        return "fresh_cache"
-    if snapshot and int(snapshot.get("ad_count") or 0) > 0:
-        return "snapshot"
-    if cached and int(cached.get("ad_count") or 0) > 0:
-        return "preserved_cache"
-    return "empty"
+    return select_seo_brand_saved_data(cached, snapshot, now)["data_source"]
 
 
 def get_seo_brand_cache_admin_rows():
@@ -1533,6 +1681,8 @@ def get_seo_brand_cache_admin_rows():
         "using_fallback": 0,
         "missing_snapshots": 0,
         "missing_snapshot_images": 0,
+        "seo_ready": 0,
+        "stale_but_usable": 0,
     }
     now = utcnow()
 
@@ -1540,18 +1690,23 @@ def get_seo_brand_cache_admin_rows():
         cached = cache_by_slug.get(brand["slug"], {})
         snapshot = snapshots_by_slug.get(brand["slug"], {})
         raw_status = cached.get("refresh_status")
-        preview_count = int(cached.get("preview_count") or 0)
         expires_at = cached.get("expires_at")
         is_expired = bool(expires_at and expires_at < now)
-        data_source = get_seo_page_data_source(cached, snapshot, now)
+        page_state = select_seo_brand_saved_data(cached, snapshot, now)
+        preview_count = page_state["preview_count"]
+        data_source = page_state["data_source"]
 
-        if snapshot:
+        if int(snapshot.get("ad_count") or 0) > 0:
             summary["with_snapshots"] += 1
-            if int(snapshot.get("ad_count") or 0) > 0 and int(snapshot.get("image_count") or 0) == 0:
-                summary["missing_snapshot_images"] += 1
         else:
             summary["missing_snapshots"] += 1
-        if data_source in ("snapshot", "preserved_cache"):
+        if page_state["needs_images"]:
+            summary["missing_snapshot_images"] += 1
+        if page_state["seo_ready"]:
+            summary["seo_ready"] += 1
+        if page_state["stale_but_usable"]:
+            summary["stale_but_usable"] += 1
+        if page_state["using_saved_data"]:
             summary["using_fallback"] += 1
 
         display_status, status_key = get_cache_status_display(raw_status, preview_count)
@@ -1560,7 +1715,7 @@ def get_seo_brand_cache_admin_rows():
             summary["failed"] += 1
         elif status_key == "not_refreshed":
             summary["not_refreshed"] += 1
-        elif status_key == "preview_available":
+        elif preview_count > 0:
             summary["with_previews"] += 1
         else:
             summary["no_active_ads"] += 1
@@ -1574,18 +1729,25 @@ def get_seo_brand_cache_admin_rows():
                 "status_key": status_key,
                 "is_expired": is_expired,
                 "result_count": cached.get("result_count"),
-                "preview_count": preview_count if raw_status else None,
+                "preview_count": preview_count,
+                "usable_image_count": page_state["usable_image_count"],
                 "country": cached.get("country"),
                 "fetched_at": cached.get("fetched_at"),
                 "expires_at": expires_at,
                 "updated_at": cached.get("updated_at"),
                 "last_error": cached.get("last_error"),
                 "data_source": data_source,
-                "using_fallback": data_source in ("snapshot", "preserved_cache"),
+                "using_fallback": page_state["using_saved_data"],
+                "quality_status": page_state["quality_status"],
+                "seo_ready": page_state["seo_ready"],
+                "needs_images": page_state["needs_images"],
+                "stale_but_usable": page_state["stale_but_usable"],
                 "snapshot_captured_at": snapshot.get("captured_at"),
                 "snapshot_ad_count": int(snapshot.get("ad_count") or 0),
                 "snapshot_image_count": int(snapshot.get("image_count") or 0),
                 "snapshot_source_query": snapshot.get("source_query"),
+                "snapshot_is_stale": page_state["snapshot_is_stale"],
+                "snapshot_quality_status": page_state["snapshot_quality_status"],
             }
         )
 
@@ -3539,7 +3701,7 @@ def get_missing_snapshot_refresh_targets(limit: int = SEO_STALE_CACHE_REFRESH_LI
             "cache": cache_by_slug.get(brand["slug"], {}),
         }
         for brand in published_brands
-        if brand["slug"] not in snapshots_by_slug
+        if int(snapshots_by_slug.get(brand["slug"], {}).get("ad_count") or 0) <= 0
     ]
     targets.sort(
         key=lambda target: target["cache"].get("updated_at")
@@ -3560,15 +3722,20 @@ def get_missing_snapshot_image_refresh_targets(limit: int = SEO_STALE_CACHE_REFR
     targets = []
 
     for brand in published_brands:
-        snapshot = snapshots_by_slug.get(brand["slug"])
-        if not snapshot:
-            continue
-        if int(snapshot.get("ad_count") or 0) <= 0 or int(snapshot.get("image_count") or 0) > 0:
+        snapshot = snapshots_by_slug.get(brand["slug"], {})
+        cached = cache_by_slug.get(brand["slug"], {})
+        page_state = select_seo_brand_saved_data(cached, snapshot)
+        snapshot_ad_count = int(snapshot.get("ad_count") or 0)
+        snapshot_image_count = int(snapshot.get("image_count") or 0)
+        snapshot_needs_images = bool(
+            snapshot_ad_count > 0 and snapshot_image_count < snapshot_ad_count
+        )
+        if not page_state["needs_images"] and not snapshot_needs_images:
             continue
         targets.append(
             {
                 "brand": brand,
-                "cache": cache_by_slug.get(brand["slug"], {}),
+                "cache": cached,
                 "snapshot": snapshot,
             }
         )

@@ -77,9 +77,9 @@
                 <div>
                     <h2>Recent {{ brand.name }} ad previews</h2>
                     <p>Cached examples from RunningAds brand research.</p>
-                    {% if seo_ads_cache.using_snapshot %}
+                    {% if seo_ads_cache.using_saved_data %}
                         <p class="muted">
-                            Showing the latest saved ad examples found by RunningAds. Live availability may change.
+                            Showing saved ad examples found by RunningAds. Live availability may change.
                         </p>
                     {% endif %}
                 </div>

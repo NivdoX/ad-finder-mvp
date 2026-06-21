@@ -73,7 +73,17 @@
     <div class="panel">
         <div class="pill">No images</div>
         <h3>{{ cache_summary.missing_snapshot_images }}</h3>
-        <p class="muted">Snapshots with ads but no images</p>
+        <p class="muted">Pages needing images</p>
+    </div>
+    <div class="panel">
+        <div class="pill">SEO ready</div>
+        <h3>{{ cache_summary.seo_ready }}</h3>
+        <p class="muted">Durable snapshot with images</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Stale</div>
+        <h3>{{ cache_summary.stale_but_usable }}</h3>
+        <p class="muted">Stale but usable</p>
     </div>
 </div>
 
@@ -96,8 +106,10 @@
                     <th>Brand</th>
                     <th>Slug</th>
                     <th>Status</th>
+                    <th>SEO status</th>
                     <th>Page source</th>
                     <th>Previews</th>
+                    <th>Usable images</th>
                     <th>Snapshot</th>
                     <th>Country</th>
                     <th>Fetched</th>
@@ -127,12 +139,32 @@
                             {% endif %}
                         </td>
                         <td>
+                            {% if row.seo_ready %}
+                                <span class="pill cache-status qualified">SEO ready</span>
+                            {% endif %}
+                            {% if row.needs_images %}
+                                <span class="pill cache-status no_active_ads">Needs images</span>
+                            {% endif %}
+                            {% if row.stale_but_usable %}
+                                <span class="pill cache-status expired">Stale but usable</span>
+                            {% endif %}
+                            {% if row.quality_status == 'quality_failed' %}
+                                <span class="pill cache-status failed">Failed</span>
+                            {% elif row.quality_status == 'quality_empty' %}
+                                <span class="pill cache-status not_refreshed">Empty</span>
+                            {% elif not row.seo_ready and not row.needs_images %}
+                                <span class="pill cache-status no_active_ads">Needs snapshot</span>
+                            {% endif %}
+                        </td>
+                        <td>
                             {% if row.data_source == 'fresh_cache' %}
                                 <span class="pill cache-status preview_available">Fresh cache</span>
-                            {% elif row.data_source == 'snapshot' %}
+                            {% elif row.data_source == 'fallback_snapshot' %}
                                 <span class="pill cache-status expired">Fallback snapshot</span>
-                            {% elif row.data_source == 'preserved_cache' %}
-                                <span class="pill cache-status expired">Preserved cache</span>
+                            {% elif row.data_source == 'stale_snapshot' %}
+                                <span class="pill cache-status expired">Stale snapshot</span>
+                            {% elif row.data_source == 'stale_cache' %}
+                                <span class="pill cache-status expired">Stale cache</span>
                             {% else %}
                                 <span class="pill cache-status not_refreshed">Empty</span>
                             {% endif %}
@@ -144,12 +176,18 @@
                                 -
                             {% endif %}
                         </td>
+                        <td>{{ row.usable_image_count }} / {{ row.preview_count }}</td>
                         <td>
                             {% if row.snapshot_captured_at %}
                                 {{ row.snapshot_captured_at }}
                                 <div class="muted">
                                     {{ row.snapshot_ad_count }} ads / {{ row.snapshot_image_count }} images
                                 </div>
+                                {% if row.snapshot_is_stale %}
+                                    <span class="pill cache-status expired">Stale</span>
+                                {% else %}
+                                    <span class="pill cache-status qualified">Fresh</span>
+                                {% endif %}
                             {% else %}
                                 <span class="muted">No snapshot</span>
                             {% endif %}

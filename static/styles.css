@@ -506,7 +506,7 @@ body {
     object-fit: cover;
 }
 
-.seo-ad-placeholder-image-error {
+.seo-ad-media-shell .seo-ad-placeholder-image-error {
     display: none;
     width: 100%;
     height: 100%;
