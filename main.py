@@ -130,6 +130,16 @@ SEO_DURABLE_IMAGE_MAX_DIMENSION = 900
 SEO_DURABLE_IMAGE_MAX_REDIRECTS = 3
 SEO_DURABLE_IMAGE_CONNECT_TIMEOUT_SECONDS = 5
 SEO_DURABLE_IMAGE_READ_TIMEOUT_SECONDS = 12
+SAMPLE_RESULTS_PREFERRED_BRAND_SLUGS = (
+    "gymshark",
+    "adidas",
+    "athletic-greens",
+    "ag1",
+    "brevo",
+    "kimp",
+)
+SAMPLE_RESULTS_BRAND_LIMIT = 3
+SAMPLE_RESULTS_ADS_PER_BRAND = 2
 SEO_CANDIDATE_TEST_COUNTRY = "US"
 SEO_CANDIDATE_TEST_MAX_RESULTS = 25
 SEO_CANDIDATE_MAX_QUERY_VARIANTS = 3
@@ -2176,6 +2186,112 @@ def get_cached_seo_brand_ads(brand_slug: str, fallback_brand_name: str = ""):
             "needs_durable_images": False,
             "needs_images": False,
         }
+    finally:
+        if conn:
+            conn.close()
+
+
+def get_durable_sample_result_brands(limit: int = SAMPLE_RESULTS_BRAND_LIMIT):
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT brand_slug, brand_name, creative_angle, captured_at, ads_json
+                    FROM seo_brand_ad_snapshots
+                    WHERE durable_image_count > 0
+                      AND quality_status = 'quality_good_images'
+                    ORDER BY
+                        COALESCE(array_position(%s::text[], brand_slug), 999),
+                        captured_at DESC NULLS LAST,
+                        brand_slug ASC
+                    LIMIT 20
+                    """,
+                    (list(SAMPLE_RESULTS_PREFERRED_BRAND_SLUGS),),
+                )
+                snapshot_rows = cur.fetchall()
+
+                image_ids = sorted({
+                    image_id
+                    for row in snapshot_rows
+                    for ad in parse_ads_json(row[4])
+                    for image_id in [get_durable_image_id(ad)]
+                    if image_id
+                })
+                if not image_ids:
+                    return []
+
+                cur.execute(
+                    """
+                    SELECT id, content_type, SUBSTRING(image_data FROM 1 FOR 32)
+                    FROM seo_ad_images
+                    WHERE id = ANY(%s)
+                      AND content_type = ANY(%s)
+                      AND byte_size > 0
+                      AND byte_size <= %s
+                      AND image_data IS NOT NULL
+                      AND OCTET_LENGTH(image_data) = byte_size
+                      AND content_hash IS NOT NULL
+                    """,
+                    (
+                        image_ids,
+                        sorted(SAFE_SEO_IMAGE_CONTENT_TYPES),
+                        SEO_DURABLE_IMAGE_ABSOLUTE_MAX_BYTES,
+                    ),
+                )
+                valid_image_ids = {
+                    int(row[0])
+                    for row in cur.fetchall()
+                    if detect_safe_image_content_type(bytes(row[2] or b"")) == row[1]
+                }
+
+        sample_brands = []
+        for brand_slug, stored_name, stored_angle, captured_at, ads_json in snapshot_rows:
+            saved_ads = []
+            seen_image_ids = set()
+            for ad in parse_ads_json(ads_json):
+                image_id = get_durable_image_id(ad)
+                if not image_id or image_id not in valid_image_ids or image_id in seen_image_ids:
+                    continue
+
+                prepared = prepare_seo_ad_preview(ad, stored_name, brand_slug)
+                prepared["media_url"] = durable_seo_image_url(image_id)
+                prepared["start_date"] = prepared.get("start_date_display") or "Not recorded"
+                prepared["is_saved"] = True
+                seen_image_ids.add(image_id)
+                saved_ads.append(prepared)
+                if len(saved_ads) >= SAMPLE_RESULTS_ADS_PER_BRAND:
+                    break
+
+            if not saved_ads:
+                continue
+
+            brand_name = strip_unresolved_placeholders(stored_name) or title_from_slug(brand_slug)
+            creative_angle = strip_unresolved_placeholders(stored_angle) or "benefit-led messaging and offer positioning"
+            for ad in saved_ads:
+                ad["creative_angle"] = creative_angle
+                ad["marketer_learning"] = (
+                    "Compare the saved creative, message, and offer with other long-running ads "
+                    "to identify patterns worth testing."
+                )
+
+            sample_brands.append({
+                "slug": brand_slug,
+                "name": brand_name,
+                "usefulness": (
+                    f"Study saved {brand_name} creatives to compare {creative_angle}."
+                ),
+                "captured_at": captured_at,
+                "ads": saved_ads,
+            })
+            if len(sample_brands) >= max(1, int(limit or 1)):
+                break
+        return sample_brands
+    except Exception as exc:
+        print("Durable sample results read error:", str(exc))
+        return []
     finally:
         if conn:
             conn.close()
@@ -5163,7 +5279,7 @@ def index():
 
 @app.route("/sample-results")
 def sample_results():
-    sample_brands = [
+    fallback_brands = [
         {
             "name": "Manscaped",
             "usefulness": "See how a direct-to-consumer brand can test distinct hooks while keeping its core offer recognizable.",
@@ -5219,6 +5335,16 @@ def sample_results():
             ],
         },
     ]
+
+    sample_brands = get_durable_sample_result_brands()
+    selected_names = {brand["name"].strip().lower() for brand in sample_brands}
+    for fallback_brand in fallback_brands:
+        if len(sample_brands) >= SAMPLE_RESULTS_BRAND_LIMIT:
+            break
+        if fallback_brand["name"].strip().lower() in selected_names:
+            continue
+        sample_brands.append(fallback_brand)
+        selected_names.add(fallback_brand["name"].strip().lower())
 
     return render_template(
         "sample_results.html",

@@ -2,7 +2,7 @@
 {% block title %}Sample Results - RunningAds{% endblock %}
 
 {% block meta_description %}
-<meta name="description" content="See static sample competitor ad insights from RunningAds.">
+<meta name="description" content="See saved sample competitor ad insights from RunningAds.">
 {% endblock %}
 
 {% block analytics %}{% endblock %}
@@ -90,13 +90,13 @@
 {% block content %}
 <main class="page">
     <section class="hero sample-intro">
-        <div class="pill sample-label">Illustrative sample data - Not live</div>
+        <div class="pill sample-label">Illustrative sample data, not live</div>
         <h1>
             See the insights behind
             <span class="headline-accent">long-running competitor ads</span>
         </h1>
         <p class="sample-disclosure">
-            These are static sample results that show the type of competitor ad insights RunningAds helps you find. Live competitor searches require a paid account.
+            These are saved sample results that show the type of competitor ad insights RunningAds helps you find. Live competitor searches require a paid account.
         </p>
     </section>
 
@@ -111,13 +111,34 @@
                 {% for ad in brand.ads %}
                     <article class="ad-card sample-ad-card">
                         <div class="card-top-row">
-                            <div class="card-badge badge-default">Static sample</div>
+                            <div class="card-badge badge-default">{% if ad.is_saved %}Saved sample{% else %}Static sample{% endif %}</div>
                         </div>
+
+                        {% if ad.media_url %}
+                            <div class="ad-media-wrap seo-ad-media-wrap seo-ad-media-shell">
+                                <img
+                                    src="{{ ad.media_url }}"
+                                    alt="Saved ad preview for {{ brand.name }}"
+                                    class="ad-media seo-ad-media"
+                                    loading="lazy"
+                                    onerror="this.closest('.seo-ad-media-shell').classList.add('image-unavailable'); this.setAttribute('aria-hidden', 'true'); this.nextElementSibling.removeAttribute('aria-hidden');"
+                                >
+                                <div class="seo-ad-placeholder seo-ad-placeholder-image-error" aria-hidden="true">
+                                    <div class="visual-pill">Image unavailable</div>
+                                    <div class="seo-ad-placeholder-brand">{{ brand.name }}</div>
+                                </div>
+                            </div>
+                        {% endif %}
+
                         <div class="ad-brand">{{ brand.name }}</div>
                         <div class="ad-date">Start date: {{ ad.start_date }}</div>
-                        <div class="ad-running">
-                            <span class="running-text">Running for {{ ad.days_running }} days</span>
-                        </div>
+                        {% if ad.days_running is defined and ad.days_running is not none %}
+                            <div class="ad-running">
+                                <span class="running-text">
+                                    Running for {{ ad.days_running }} days{% if ad.is_saved %} when saved{% endif %}
+                                </span>
+                            </div>
+                        {% endif %}
 
                         <div class="sample-insight">
                             <h3>Creative angle</h3>
