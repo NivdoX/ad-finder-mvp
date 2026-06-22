@@ -1,13 +1,18 @@
 import gc
+import hashlib
+import ipaddress
 import json
 import os
 import re
 import secrets
+import socket
 import time
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urljoin, urlparse
 from xml.sax.saxutils import escape
 
 import psycopg2
+import requests
 import stripe
 import sentry_sdk
 from sentry_sdk.integrations.flask import FlaskIntegration
@@ -20,6 +25,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    Response,
     send_from_directory,
     session,
     url_for,
@@ -33,6 +39,7 @@ from services.meta_ads import (
     MetaAdsServiceError,
     MetaAdsPlatformLimitError,
     extract_best_image_url,
+    normalize_image_url,
 )
 from seo_brands import (
     BRAND_PAGES,
@@ -109,6 +116,15 @@ SEO_STALE_CACHE_REFRESH_LIMIT = SEO_REFRESH_MAX_BRANDS_PER_CLICK
 SEO_REFRESH_RUN_TYPE_PATTERN = "seo_cache_refresh_%"
 SEO_REFRESH_ADVISORY_LOCK_ID = 73190422
 APIFY_USAGE_LIMIT_MESSAGE = "Apify usage limit reached. No further refreshes were attempted."
+SEO_DURABLE_IMAGE_ABSOLUTE_MAX_BYTES = 1_000_000
+SEO_DURABLE_IMAGE_MAX_BYTES = min(
+    SEO_DURABLE_IMAGE_ABSOLUTE_MAX_BYTES,
+    env_int("SEO_DURABLE_IMAGE_MAX_BYTES", 500_000, minimum=50_000),
+)
+SEO_DURABLE_IMAGE_MAX_BRANDS_PER_CLICK = 3
+SEO_DURABLE_IMAGE_MAX_REDIRECTS = 3
+SEO_DURABLE_IMAGE_CONNECT_TIMEOUT_SECONDS = 5
+SEO_DURABLE_IMAGE_READ_TIMEOUT_SECONDS = 12
 SEO_CANDIDATE_TEST_COUNTRY = "US"
 SEO_CANDIDATE_TEST_MAX_RESULTS = 25
 SEO_CANDIDATE_MAX_QUERY_VARIANTS = 3
@@ -247,6 +263,36 @@ def ensure_schema():
                         captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """
+                )
+
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS seo_ad_images (
+                        id SERIAL PRIMARY KEY,
+                        brand_slug TEXT NOT NULL,
+                        source_url TEXT NOT NULL,
+                        source_url_hash TEXT NOT NULL,
+                        content_hash TEXT NOT NULL,
+                        content_type TEXT NOT NULL,
+                        byte_size INTEGER NOT NULL,
+                        image_data BYTEA NOT NULL,
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        CONSTRAINT seo_ad_images_byte_size_positive CHECK (byte_size > 0)
+                    );
+                    """
+                )
+
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS seo_ad_image_sources (
+                        id SERIAL PRIMARY KEY,
+                        image_id INTEGER NOT NULL REFERENCES seo_ad_images(id) ON DELETE CASCADE,
+                        brand_slug TEXT NOT NULL,
+                        source_url TEXT NOT NULL,
+                        source_url_hash TEXT NOT NULL,
+                        created_at TIMESTAMPTZ DEFAULT NOW()
                     );
                     """
                 )
@@ -419,6 +465,7 @@ def ensure_schema():
                 cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS ads_json TEXT DEFAULT '[]';")
                 cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS ad_count INTEGER DEFAULT 0;")
                 cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS image_count INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS durable_image_count INTEGER DEFAULT 0;")
                 cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS quality_status TEXT DEFAULT 'quality_empty';")
                 cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS captured_at TIMESTAMPTZ DEFAULT NOW();")
                 cur.execute("ALTER TABLE seo_brand_ad_snapshots ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
@@ -491,6 +538,20 @@ def ensure_schema():
                 cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS platform_limit_reached BOOLEAN DEFAULT FALSE;")
                 cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS error TEXT;")
 
+                cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS brand_slug TEXT;")
+                cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS source_url TEXT;")
+                cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS source_url_hash TEXT;")
+                cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS content_hash TEXT;")
+                cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS content_type TEXT;")
+                cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS byte_size INTEGER;")
+                cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS image_data BYTEA;")
+                cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
+                cur.execute("ALTER TABLE seo_ad_image_sources ADD COLUMN IF NOT EXISTS image_id INTEGER;")
+                cur.execute("ALTER TABLE seo_ad_image_sources ADD COLUMN IF NOT EXISTS brand_slug TEXT;")
+                cur.execute("ALTER TABLE seo_ad_image_sources ADD COLUMN IF NOT EXISTS source_url TEXT;")
+                cur.execute("ALTER TABLE seo_ad_image_sources ADD COLUMN IF NOT EXISTS source_url_hash TEXT;")
+                cur.execute("ALTER TABLE seo_ad_image_sources ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
+
                 cur.execute(
                     """
                     CREATE INDEX IF NOT EXISTS idx_searches_user_created_at
@@ -519,6 +580,36 @@ def ensure_schema():
                     """
                     CREATE UNIQUE INDEX IF NOT EXISTS idx_seo_brand_ad_snapshots_brand_slug
                     ON seo_brand_ad_snapshots(brand_slug);
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_seo_ad_images_source_url_hash
+                    ON seo_ad_images(source_url_hash);
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_seo_ad_images_content_hash
+                    ON seo_ad_images(content_hash);
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_seo_ad_images_brand_slug
+                    ON seo_ad_images(brand_slug);
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_seo_ad_image_sources_source_url_hash
+                    ON seo_ad_image_sources(source_url_hash);
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_seo_ad_image_sources_image_id
+                    ON seo_ad_image_sources(image_id);
                     """
                 )
                 cur.execute(
@@ -1225,6 +1316,324 @@ def safe_brand_display_name(brand_slug: str, brand_name: str = "") -> str:
     return (clean_name or title_from_slug(brand_slug) or "Brand").upper()
 
 
+SAFE_SEO_IMAGE_CONTENT_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+}
+
+
+class SeoImagePreservationError(Exception):
+    pass
+
+
+def durable_seo_image_url(image_id) -> str:
+    try:
+        normalized_id = int(image_id)
+    except (TypeError, ValueError):
+        return ""
+    return f"/seo-ad-image/{normalized_id}" if normalized_id > 0 else ""
+
+
+def get_durable_image_id(ad) -> int | None:
+    if not isinstance(ad, dict):
+        return None
+    try:
+        image_id = int(ad.get("durable_image_id") or 0)
+    except (TypeError, ValueError):
+        return None
+    return image_id if image_id > 0 else None
+
+
+def get_external_seo_image_url(ad) -> str:
+    if not isinstance(ad, dict):
+        return ""
+    source_url = normalize_image_url(ad.get("source_image_url"))
+    if source_url:
+        return source_url
+    return extract_best_image_url(ad)
+
+
+def get_seo_ad_display_image_url(ad) -> str:
+    durable_url = durable_seo_image_url(get_durable_image_id(ad))
+    return durable_url or get_external_seo_image_url(ad)
+
+
+def count_durable_snapshot_images(ads) -> int:
+    return sum(
+        1
+        for ad in (ads if isinstance(ads, list) else [])
+        if get_durable_image_id(ad)
+    )
+
+
+def count_external_snapshot_images(ads) -> int:
+    return sum(
+        1
+        for ad in (ads if isinstance(ads, list) else [])
+        if get_external_seo_image_url(ad)
+    )
+
+
+def count_missing_durable_snapshot_images(ads) -> int:
+    return sum(
+        1
+        for ad in (ads if isinstance(ads, list) else [])
+        if not get_durable_image_id(ad) and get_external_seo_image_url(ad)
+    )
+
+
+def detect_safe_image_content_type(image_data: bytes) -> str:
+    if len(image_data) < 32:
+        return ""
+    if image_data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if image_data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if len(image_data) >= 12 and image_data[:4] == b"RIFF" and image_data[8:12] == b"WEBP":
+        return "image/webp"
+    if image_data.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    return ""
+
+
+def validate_public_image_download_url(value: str) -> str:
+    normalized_url = normalize_image_url(value)
+    if not normalized_url:
+        raise SeoImagePreservationError("Image URL is invalid or expired.")
+
+    parsed = urlparse(normalized_url)
+    if parsed.scheme.lower() != "https" or not parsed.hostname:
+        raise SeoImagePreservationError("Only HTTPS image URLs can be preserved.")
+    if parsed.username or parsed.password:
+        raise SeoImagePreservationError("Authenticated image URLs cannot be preserved.")
+    try:
+        image_port = parsed.port
+    except ValueError as exc:
+        raise SeoImagePreservationError("Image URL has an invalid port.") from exc
+    if image_port not in (None, 443):
+        raise SeoImagePreservationError("Image URL uses an unsupported port.")
+
+    try:
+        addresses = socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)
+    except OSError as exc:
+        raise SeoImagePreservationError("Image host could not be resolved.") from exc
+    if not addresses:
+        raise SeoImagePreservationError("Image host could not be resolved.")
+
+    for address in addresses:
+        try:
+            resolved_ip = ipaddress.ip_address(address[4][0].split("%", 1)[0])
+        except ValueError as exc:
+            raise SeoImagePreservationError("Image host resolved to an invalid address.") from exc
+        if not resolved_ip.is_global:
+            raise SeoImagePreservationError("Image host is not publicly routable.")
+    return normalized_url
+
+
+def download_small_seo_image(source_url: str):
+    current_url = source_url
+    for redirect_count in range(SEO_DURABLE_IMAGE_MAX_REDIRECTS + 1):
+        current_url = validate_public_image_download_url(current_url)
+        try:
+            response = requests.get(
+                current_url,
+                stream=True,
+                allow_redirects=False,
+                timeout=(
+                    SEO_DURABLE_IMAGE_CONNECT_TIMEOUT_SECONDS,
+                    SEO_DURABLE_IMAGE_READ_TIMEOUT_SECONDS,
+                ),
+                headers={"User-Agent": "RunningAds SEO image preservation/1.0"},
+            )
+        except requests.RequestException as exc:
+            raise SeoImagePreservationError("Image download failed.") from exc
+
+        try:
+            if response.status_code in {301, 302, 303, 307, 308}:
+                if redirect_count >= SEO_DURABLE_IMAGE_MAX_REDIRECTS:
+                    raise SeoImagePreservationError("Image download redirected too many times.")
+                location = response.headers.get("Location")
+                if not location:
+                    raise SeoImagePreservationError("Image redirect was missing a destination.")
+                current_url = urljoin(current_url, location)
+                continue
+            if response.status_code != 200:
+                raise SeoImagePreservationError(f"Image download returned HTTP {response.status_code}.")
+
+            declared_type = (response.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+            if declared_type not in SAFE_SEO_IMAGE_CONTENT_TYPES:
+                raise SeoImagePreservationError("Image response had an unsupported content type.")
+
+            try:
+                declared_size = int(response.headers.get("Content-Length") or 0)
+            except (TypeError, ValueError):
+                declared_size = 0
+            if declared_size > SEO_DURABLE_IMAGE_MAX_BYTES:
+                raise SeoImagePreservationError("Image exceeds the durable preview size limit.")
+
+            chunks = bytearray()
+            for chunk in response.iter_content(chunk_size=64 * 1024):
+                if not chunk:
+                    continue
+                chunks.extend(chunk)
+                if len(chunks) > SEO_DURABLE_IMAGE_MAX_BYTES:
+                    raise SeoImagePreservationError("Image exceeds the durable preview size limit.")
+            image_data = bytes(chunks)
+            detected_type = detect_safe_image_content_type(image_data)
+            if not detected_type or detected_type != declared_type:
+                raise SeoImagePreservationError("Image content did not match its declared type.")
+            return image_data, detected_type, current_url
+        finally:
+            response.close()
+
+    raise SeoImagePreservationError("Image download could not be completed.")
+
+
+def get_durable_seo_image_by_source(source_url: str):
+    source_url_hash = hashlib.sha256(source_url.encode("utf-8")).hexdigest()
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT image.id, image.content_type, image.byte_size
+                    FROM seo_ad_image_sources source
+                    JOIN seo_ad_images image ON image.id = source.image_id
+                    WHERE source.source_url_hash = %s
+                    """,
+                    (source_url_hash,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    cur.execute(
+                        """
+                        SELECT id, content_type, byte_size
+                        FROM seo_ad_images
+                        WHERE source_url_hash = %s
+                        """,
+                        (source_url_hash,),
+                    )
+                    row = cur.fetchone()
+                if not row:
+                    return None
+                return {
+                    "id": int(row[0]),
+                    "content_type": row[1],
+                    "byte_size": int(row[2] or 0),
+                }
+    finally:
+        conn.close()
+
+
+def save_durable_seo_image(brand_slug: str, source_url: str):
+    source_url = validate_public_image_download_url(source_url)
+    existing = get_durable_seo_image_by_source(source_url)
+    if existing:
+        return existing
+
+    image_data, content_type, _ = download_small_seo_image(source_url)
+    source_url_hash = hashlib.sha256(source_url.encode("utf-8")).hexdigest()
+    content_hash = hashlib.sha256(image_data).hexdigest()
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO seo_ad_images (
+                        brand_slug, source_url, source_url_hash, content_hash,
+                        content_type, byte_size, image_data
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT DO NOTHING
+                    RETURNING id
+                    """,
+                    (
+                        brand_slug,
+                        source_url,
+                        source_url_hash,
+                        content_hash,
+                        content_type,
+                        len(image_data),
+                        psycopg2.Binary(image_data),
+                    ),
+                )
+                inserted = cur.fetchone()
+                if inserted:
+                    image = {
+                        "id": int(inserted[0]),
+                        "content_type": content_type,
+                        "byte_size": len(image_data),
+                    }
+                else:
+                    cur.execute(
+                        """
+                        SELECT id, content_type, byte_size
+                        FROM seo_ad_images
+                        WHERE source_url_hash = %s OR content_hash = %s
+                        ORDER BY CASE WHEN source_url_hash = %s THEN 0 ELSE 1 END
+                        LIMIT 1
+                        """,
+                        (source_url_hash, content_hash, source_url_hash),
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        raise SeoImagePreservationError("Durable image could not be stored.")
+                    image = {
+                        "id": int(row[0]),
+                        "content_type": row[1],
+                        "byte_size": int(row[2] or 0),
+                    }
+                cur.execute(
+                    """
+                    INSERT INTO seo_ad_image_sources (
+                        image_id, brand_slug, source_url, source_url_hash
+                    )
+                    VALUES (%s, %s, %s, %s)
+                    ON CONFLICT (source_url_hash) DO NOTHING
+                    """,
+                    (image["id"], brand_slug, source_url, source_url_hash),
+                )
+                return image
+    finally:
+        conn.close()
+
+
+def preserve_durable_images_for_ads(brand_slug: str, ads):
+    preserved_ads = []
+    summary = {"attempted": 0, "saved": 0, "reused": 0, "failed": 0, "errors": []}
+    for original_ad in (ads if isinstance(ads, list) else [])[:SEO_BRAND_PREVIEW_COUNT]:
+        ad = dict(original_ad) if isinstance(original_ad, dict) else {}
+        if get_durable_image_id(ad):
+            summary["reused"] += 1
+            preserved_ads.append(ad)
+            continue
+
+        source_url = get_external_seo_image_url(ad)
+        if not source_url:
+            preserved_ads.append(ad)
+            continue
+
+        summary["attempted"] += 1
+        try:
+            existing = get_durable_seo_image_by_source(source_url)
+            image = existing or save_durable_seo_image(brand_slug, source_url)
+            ad["source_image_url"] = source_url
+            ad["durable_image_id"] = image["id"]
+            ad["durable_content_type"] = image["content_type"]
+            ad["durable_byte_size"] = image["byte_size"]
+            summary["reused" if existing else "saved"] += 1
+        except Exception as exc:
+            summary["failed"] += 1
+            summary["errors"].append(str(exc))
+            print(f"SEO durable image preservation failed for {brand_slug}: {str(exc)}")
+        preserved_ads.append(ad)
+    return preserved_ads, summary
+
+
 def prepare_seo_ad_preview(ad, fallback_brand_name: str, brand_slug: str):
     if not isinstance(ad, dict):
         ad = {}
@@ -1235,7 +1644,7 @@ def prepare_seo_ad_preview(ad, fallback_brand_name: str, brand_slug: str):
     )
     ad_text = strip_unresolved_placeholders(ad.get("ad_text"))
     headline = strip_unresolved_placeholders(ad.get("headline"))
-    media_url = extract_best_image_url(ad)
+    media_url = get_seo_ad_display_image_url(ad)
     snapshot_url = strip_unresolved_placeholders(ad.get("snapshot_url"))
 
     prepared = dict(ad)
@@ -1252,12 +1661,16 @@ def select_seo_preview_ads(ads):
         if not isinstance(ad, dict):
             continue
         normalized = dict(ad)
-        normalized["media_url"] = extract_best_image_url(ad)
+        normalized["media_url"] = get_seo_ad_display_image_url(ad)
         normalized_ads.append(normalized)
 
-    image_ads = [ad for ad in normalized_ads if ad.get("media_url")]
+    durable_ads = [ad for ad in normalized_ads if get_durable_image_id(ad)]
+    external_ads = [
+        ad for ad in normalized_ads
+        if not get_durable_image_id(ad) and ad.get("media_url")
+    ]
     text_only_ads = [ad for ad in normalized_ads if not ad.get("media_url")]
-    return (image_ads + text_only_ads)[:SEO_BRAND_PREVIEW_COUNT]
+    return (durable_ads + external_ads + text_only_ads)[:SEO_BRAND_PREVIEW_COUNT]
 
 
 SEO_SNAPSHOT_AD_FIELDS = (
@@ -1270,6 +1683,10 @@ SEO_SNAPSHOT_AD_FIELDS = (
     "landing_page",
     "snapshot_url",
     "media_url",
+    "source_image_url",
+    "durable_image_id",
+    "durable_content_type",
+    "durable_byte_size",
     "start_date_display",
     "days_running",
 )
@@ -1289,7 +1706,7 @@ def build_seo_snapshot_ads(brand_name: str, ads):
         compact = {}
         for field in SEO_SNAPSHOT_AD_FIELDS:
             value = ad.get(field)
-            if field == "days_running":
+            if field in {"days_running", "durable_image_id", "durable_byte_size"}:
                 try:
                     compact[field] = int(value) if value is not None else None
                 except (TypeError, ValueError):
@@ -1316,7 +1733,7 @@ def count_snapshot_images(ads):
     return sum(
         1
         for ad in (ads if isinstance(ads, list) else [])
-        if isinstance(ad, dict) and extract_best_image_url(ad)
+        if isinstance(ad, dict) and get_seo_ad_display_image_url(ad)
     )
 
 
@@ -1338,6 +1755,8 @@ def select_seo_brand_saved_data(cached, snapshot, now=None):
     snapshot_ads = select_seo_preview_ads(snapshot.get("ads") or [])
     cache_image_count = count_snapshot_images(cache_ads)
     snapshot_image_count = count_snapshot_images(snapshot_ads)
+    cache_durable_image_count = count_durable_snapshot_images(cache_ads)
+    snapshot_durable_image_count = count_durable_snapshot_images(snapshot_ads)
     cache_is_fresh = bool(
         cache_ads
         and cached.get("refresh_status") == "success"
@@ -1353,7 +1772,15 @@ def select_seo_brand_saved_data(cached, snapshot, now=None):
         )
     )
 
-    if (
+    if snapshot_durable_image_count > cache_durable_image_count:
+        selected_ads = snapshot_ads
+        data_source = "stale_snapshot" if snapshot_is_stale else "fallback_snapshot"
+        source_captured_at = snapshot_captured_at
+    elif cache_durable_image_count > snapshot_durable_image_count:
+        selected_ads = cache_ads
+        data_source = "fresh_cache" if cache_is_fresh else "stale_cache"
+        source_captured_at = cached.get("fetched_at")
+    elif (
         cache_is_fresh
         and cache_image_count > 0
         and cache_image_count >= snapshot_image_count
@@ -1384,6 +1811,9 @@ def select_seo_brand_saved_data(cached, snapshot, now=None):
 
     preview_count = len(selected_ads)
     usable_image_count = count_snapshot_images(selected_ads)
+    durable_image_count = count_durable_snapshot_images(selected_ads)
+    external_image_count = count_external_snapshot_images(selected_ads)
+    missing_durable_image_count = count_missing_durable_snapshot_images(selected_ads)
     failed = bool(not selected_ads and cached.get("refresh_status") == "failed")
     quality_status = get_seo_snapshot_quality_status(
         preview_count,
@@ -1400,6 +1830,9 @@ def select_seo_brand_saved_data(cached, snapshot, now=None):
         "source_captured_at": source_captured_at,
         "preview_count": preview_count,
         "usable_image_count": usable_image_count,
+        "durable_image_count": durable_image_count,
+        "external_image_count": external_image_count,
+        "missing_durable_image_count": missing_durable_image_count,
         "quality_status": quality_status,
         "cache_is_fresh": cache_is_fresh,
         "snapshot_is_stale": snapshot_is_stale,
@@ -1409,7 +1842,14 @@ def select_seo_brand_saved_data(cached, snapshot, now=None):
         "using_snapshot": data_source in ("fallback_snapshot", "stale_snapshot"),
         "using_saved_data": bool(selected_ads and data_source != "fresh_cache"),
         "needs_images": bool(preview_count > 0 and usable_image_count < preview_count),
-        "seo_ready": bool(snapshot_ads and snapshot_image_count > 0),
+        "seo_ready": bool(selected_ads and durable_image_count > 0),
+        "durable_images_ready": bool(
+            preview_count > 0 and durable_image_count >= preview_count
+        ),
+        "external_images_only": bool(durable_image_count == 0 and external_image_count > 0),
+        "needs_durable_images": bool(
+            missing_durable_image_count > 0
+        ),
         "stale_but_usable": bool(
             data_source in ("stale_snapshot", "stale_cache")
             and usable_image_count > 0
@@ -1423,6 +1863,7 @@ def upsert_last_good_seo_snapshot(cur, brand, ads, captured_at):
         return False
 
     image_count = count_snapshot_images(snapshot_ads)
+    durable_image_count = count_durable_snapshot_images(snapshot_ads)
     quality_status = get_seo_snapshot_quality_status(len(snapshot_ads), image_count)
     cur.execute(
         """
@@ -1438,6 +1879,7 @@ def upsert_last_good_seo_snapshot(cur, brand, ads, captured_at):
         existing_ads = parse_ads_json(existing_row[0])
         existing_ad_count = len(existing_ads)
         existing_image_count = count_snapshot_images(existing_ads)
+        existing_durable_image_count = count_durable_snapshot_images(existing_ads)
         existing_quality_status = get_seo_snapshot_quality_status(
             existing_ad_count,
             existing_image_count,
@@ -1447,29 +1889,37 @@ def upsert_last_good_seo_snapshot(cur, brand, ads, captured_at):
             UPDATE seo_brand_ad_snapshots
             SET ad_count = %s,
                 image_count = %s,
+                durable_image_count = %s,
                 quality_status = %s
             WHERE brand_slug = %s
             """,
             (
                 existing_ad_count,
                 existing_image_count,
+                existing_durable_image_count,
                 existing_quality_status,
                 brand["slug"],
             ),
         )
-        if existing_image_count > image_count:
+        if existing_durable_image_count > durable_image_count:
             return False
-        if existing_image_count == image_count and existing_ad_count > len(snapshot_ads):
+        if existing_durable_image_count == durable_image_count and existing_image_count > image_count:
+            return False
+        if (
+            existing_durable_image_count == durable_image_count
+            and existing_image_count == image_count
+            and existing_ad_count > len(snapshot_ads)
+        ):
             return False
 
     cur.execute(
         """
         INSERT INTO seo_brand_ad_snapshots (
             brand_slug, brand_name, source_query, creative_angle,
-            ads_json, ad_count, image_count, quality_status,
+            ads_json, ad_count, image_count, durable_image_count, quality_status,
             captured_at, updated_at
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
         ON CONFLICT (brand_slug)
         DO UPDATE SET
             brand_name = EXCLUDED.brand_name,
@@ -1478,12 +1928,18 @@ def upsert_last_good_seo_snapshot(cur, brand, ads, captured_at):
             ads_json = EXCLUDED.ads_json,
             ad_count = EXCLUDED.ad_count,
             image_count = EXCLUDED.image_count,
+            durable_image_count = EXCLUDED.durable_image_count,
             quality_status = EXCLUDED.quality_status,
             captured_at = EXCLUDED.captured_at,
             updated_at = NOW()
-        WHERE EXCLUDED.image_count > COALESCE(seo_brand_ad_snapshots.image_count, 0)
+        WHERE EXCLUDED.durable_image_count > COALESCE(seo_brand_ad_snapshots.durable_image_count, 0)
            OR (
-                EXCLUDED.image_count = COALESCE(seo_brand_ad_snapshots.image_count, 0)
+                EXCLUDED.durable_image_count = COALESCE(seo_brand_ad_snapshots.durable_image_count, 0)
+                AND EXCLUDED.image_count > COALESCE(seo_brand_ad_snapshots.image_count, 0)
+           )
+           OR (
+                EXCLUDED.durable_image_count = COALESCE(seo_brand_ad_snapshots.durable_image_count, 0)
+                AND EXCLUDED.image_count = COALESCE(seo_brand_ad_snapshots.image_count, 0)
                 AND EXCLUDED.ad_count >= COALESCE(seo_brand_ad_snapshots.ad_count, 0)
            )
         """,
@@ -1495,6 +1951,7 @@ def upsert_last_good_seo_snapshot(cur, brand, ads, captured_at):
             json.dumps(snapshot_ads),
             len(snapshot_ads),
             image_count,
+            durable_image_count,
             quality_status,
             captured_at,
         ),
@@ -1570,6 +2027,8 @@ def get_cached_seo_brand_ads(brand_slug: str, fallback_brand_name: str = ""):
                     "result_count": int(cache_row[1] or 0) if cache_row else 0,
                     "preview_count": len(preview_ads),
                     "usable_image_count": page_state["usable_image_count"],
+                    "durable_image_count": page_state["durable_image_count"],
+                    "external_image_count": page_state["external_image_count"],
                     "fetched_at": cache_row[3] if cache_row else None,
                     "expires_at": cache_row[4] if cache_row else None,
                     "refresh_status": cache_row[5] if cache_row else None,
@@ -1586,6 +2045,9 @@ def get_cached_seo_brand_ads(brand_slug: str, fallback_brand_name: str = ""):
                     "quality_status": page_state["quality_status"],
                     "snapshot_quality_status": page_state["snapshot_quality_status"],
                     "seo_ready": page_state["seo_ready"],
+                    "durable_images_ready": page_state["durable_images_ready"],
+                    "external_images_only": page_state["external_images_only"],
+                    "needs_durable_images": page_state["needs_durable_images"],
                     "needs_images": page_state["needs_images"],
                 }
     except Exception as exc:
@@ -1595,6 +2057,8 @@ def get_cached_seo_brand_ads(brand_slug: str, fallback_brand_name: str = ""):
             "result_count": 0,
             "preview_count": 0,
             "usable_image_count": 0,
+            "durable_image_count": 0,
+            "external_image_count": 0,
             "fetched_at": None,
             "expires_at": None,
             "refresh_status": "error",
@@ -1611,6 +2075,9 @@ def get_cached_seo_brand_ads(brand_slug: str, fallback_brand_name: str = ""):
             "quality_status": "quality_failed",
             "snapshot_quality_status": "quality_empty",
             "seo_ready": False,
+            "durable_images_ready": False,
+            "external_images_only": False,
+            "needs_durable_images": False,
             "needs_images": False,
         }
     finally:
@@ -1645,6 +2112,8 @@ def get_seo_brand_cache_by_slug():
                         "updated_at": row[8],
                         "ad_count": len(cached_ads),
                         "image_count": count_snapshot_images(cached_ads),
+                        "durable_image_count": count_durable_snapshot_images(cached_ads),
+                        "external_image_count": count_external_snapshot_images(cached_ads),
                         "ads": cached_ads,
                     }
     finally:
@@ -1661,23 +2130,25 @@ def get_seo_brand_snapshot_by_slug():
                 cur.execute(
                     """
                     SELECT brand_slug, brand_name, source_query, creative_angle,
-                           ad_count, image_count, captured_at, updated_at, ads_json,
-                           quality_status
+                           ad_count, image_count, durable_image_count, captured_at,
+                           updated_at, ads_json, quality_status
                     FROM seo_brand_ad_snapshots
                     """
                 )
                 for row in cur.fetchall():
-                    snapshot_ads = parse_ads_json(row[8])
+                    snapshot_ads = parse_ads_json(row[9])
                     snapshots[row[0]] = {
                         "brand_name": row[1],
                         "source_query": row[2],
                         "creative_angle": row[3],
                         "ad_count": len(snapshot_ads),
                         "image_count": count_snapshot_images(snapshot_ads),
-                        "captured_at": row[6],
-                        "updated_at": row[7],
+                        "durable_image_count": count_durable_snapshot_images(snapshot_ads),
+                        "external_image_count": count_external_snapshot_images(snapshot_ads),
+                        "captured_at": row[7],
+                        "updated_at": row[8],
                         "ads": snapshot_ads,
-                        "stored_quality_status": row[9] or "quality_empty",
+                        "stored_quality_status": row[10] or "quality_empty",
                         "quality_status": get_seo_snapshot_quality_status(
                             len(snapshot_ads),
                             count_snapshot_images(snapshot_ads),
@@ -1708,6 +2179,9 @@ def get_seo_brand_cache_admin_rows():
         "missing_snapshots": 0,
         "missing_snapshot_images": 0,
         "seo_ready": 0,
+        "durable_images_ready": 0,
+        "external_images_only": 0,
+        "needs_durable_images": 0,
         "stale_but_usable": 0,
     }
     now = utcnow()
@@ -1730,6 +2204,12 @@ def get_seo_brand_cache_admin_rows():
             summary["missing_snapshot_images"] += 1
         if page_state["seo_ready"]:
             summary["seo_ready"] += 1
+        if page_state["durable_images_ready"]:
+            summary["durable_images_ready"] += 1
+        if page_state["external_images_only"]:
+            summary["external_images_only"] += 1
+        if page_state["needs_durable_images"]:
+            summary["needs_durable_images"] += 1
         if page_state["stale_but_usable"]:
             summary["stale_but_usable"] += 1
         if page_state["using_saved_data"]:
@@ -1757,6 +2237,8 @@ def get_seo_brand_cache_admin_rows():
                 "result_count": cached.get("result_count"),
                 "preview_count": preview_count,
                 "usable_image_count": page_state["usable_image_count"],
+                "external_image_count": page_state["external_image_count"],
+                "durable_image_count": page_state["durable_image_count"],
                 "country": cached.get("country"),
                 "fetched_at": cached.get("fetched_at"),
                 "expires_at": expires_at,
@@ -1766,11 +2248,15 @@ def get_seo_brand_cache_admin_rows():
                 "using_fallback": page_state["using_saved_data"],
                 "quality_status": page_state["quality_status"],
                 "seo_ready": page_state["seo_ready"],
+                "durable_images_ready": page_state["durable_images_ready"],
+                "external_images_only": page_state["external_images_only"],
+                "needs_durable_images": page_state["needs_durable_images"],
                 "needs_images": page_state["needs_images"],
                 "stale_but_usable": page_state["stale_but_usable"],
                 "snapshot_captured_at": snapshot.get("captured_at"),
                 "snapshot_ad_count": int(snapshot.get("ad_count") or 0),
                 "snapshot_image_count": int(snapshot.get("image_count") or 0),
+                "snapshot_durable_image_count": int(snapshot.get("durable_image_count") or 0),
                 "snapshot_source_query": snapshot.get("source_query"),
                 "snapshot_is_stale": page_state["snapshot_is_stale"],
                 "snapshot_quality_status": page_state["snapshot_quality_status"],
@@ -3523,6 +4009,11 @@ def promote_seo_brand_candidate(candidate):
 def save_seo_brand_ads_cache(brand, ads: list, country: str = "NO", result_count: int | None = None):
     ads = ads if isinstance(ads, list) else []
     stored_ads = select_seo_preview_ads(ads)
+    try:
+        stored_ads, _ = preserve_durable_images_for_ads(brand["slug"], stored_ads)
+        stored_ads = select_seo_preview_ads(stored_ads)
+    except Exception as exc:
+        print(f"SEO durable image preservation skipped for {brand['slug']}: {str(exc)}")
     result_count = len(ads) if result_count is None else int(result_count or 0)
     preview_count = min(len(stored_ads), SEO_BRAND_PREVIEW_COUNT)
     fetched_at = utcnow()
@@ -3910,6 +4401,113 @@ def get_missing_snapshot_image_refresh_targets(limit: int = SEO_STALE_CACHE_REFR
         "targets": targets[:limit],
         "limit": limit,
     }
+
+
+def get_missing_durable_image_targets(
+    limit: int = SEO_DURABLE_IMAGE_MAX_BRANDS_PER_CLICK,
+):
+    published_brands = get_published_seo_brands()
+    snapshots_by_slug = get_seo_brand_snapshot_by_slug()
+    targets = []
+    for brand in published_brands:
+        snapshot = snapshots_by_slug.get(brand["slug"], {})
+        ads = snapshot.get("ads") or []
+        missing_durable_ads = [
+            ad for ad in ads
+            if (
+                isinstance(ad, dict)
+                and not get_durable_image_id(ad)
+                and get_external_seo_image_url(ad)
+            )
+        ]
+        if not missing_durable_ads:
+            continue
+        targets.append(
+            {
+                "brand": brand,
+                "ads": ads,
+                "captured_at": snapshot.get("captured_at"),
+                "missing_count": len(missing_durable_ads),
+            }
+        )
+
+    targets.sort(
+        key=lambda target: target.get("captured_at")
+        or datetime.min.replace(tzinfo=timezone.utc)
+    )
+    return {
+        "brands_checked": len(published_brands),
+        "eligible_count": len(targets),
+        "targets": targets[:max(0, min(limit, SEO_DURABLE_IMAGE_MAX_BRANDS_PER_CLICK))],
+        "limit": SEO_DURABLE_IMAGE_MAX_BRANDS_PER_CLICK,
+    }
+
+
+def update_snapshot_durable_image_references(brand_slug: str, ads) -> bool:
+    snapshot_ads = select_seo_preview_ads(ads)
+    ad_count = len(snapshot_ads)
+    image_count = count_snapshot_images(snapshot_ads)
+    durable_image_count = count_durable_snapshot_images(snapshot_ads)
+    quality_status = get_seo_snapshot_quality_status(ad_count, image_count)
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE seo_brand_ad_snapshots
+                    SET ads_json = %s,
+                        ad_count = %s,
+                        image_count = %s,
+                        durable_image_count = %s,
+                        quality_status = %s,
+                        updated_at = NOW()
+                    WHERE brand_slug = %s
+                    """,
+                    (
+                        json.dumps(snapshot_ads),
+                        ad_count,
+                        image_count,
+                        durable_image_count,
+                        quality_status,
+                        brand_slug,
+                    ),
+                )
+                return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def preserve_missing_durable_seo_images():
+    target_data = get_missing_durable_image_targets()
+    summary = {
+        "brands_checked": target_data["brands_checked"],
+        "eligible_count": target_data["eligible_count"],
+        "brands_attempted": 0,
+        "brands_updated": 0,
+        "images_attempted": 0,
+        "images_saved": 0,
+        "images_reused": 0,
+        "images_failed": 0,
+        "errors": [],
+        "limit": SEO_DURABLE_IMAGE_MAX_BRANDS_PER_CLICK,
+    }
+    for target in target_data["targets"]:
+        brand = target["brand"]
+        summary["brands_attempted"] += 1
+        preserved_ads, result = preserve_durable_images_for_ads(
+            brand["slug"],
+            target["ads"],
+        )
+        summary["images_attempted"] += result["attempted"]
+        summary["images_saved"] += result["saved"]
+        summary["images_reused"] += result["reused"]
+        summary["images_failed"] += result["failed"]
+        summary["errors"].extend(result["errors"])
+        if result["saved"] or result["reused"]:
+            if update_snapshot_durable_image_references(brand["slug"], preserved_ads):
+                summary["brands_updated"] += 1
+    return summary
 
 
 def refresh_seo_brand_cache_targets(target_data, run_type: str):
@@ -4860,6 +5458,7 @@ def seo_brand_cache_admin():
         "stale": get_stale_seo_cache_refresh_targets()["eligible_count"],
         "missing_snapshots": get_missing_snapshot_refresh_targets()["eligible_count"],
         "missing_images": get_missing_snapshot_image_refresh_targets()["eligible_count"],
+        "missing_durable_images": get_missing_durable_image_targets()["eligible_count"],
     }
     return render_template(
         "seo_brand_cache_admin.html",
@@ -5883,6 +6482,26 @@ def refresh_missing_seo_snapshot_images():
     return redirect(url_for("seo_brand_cache_admin"))
 
 
+@app.route("/admin/seo-brand-cache/preserve-missing-durable-images", methods=["POST"])
+@admin_required
+def preserve_missing_durable_seo_images_route():
+    try:
+        summary = preserve_missing_durable_seo_images()
+        message = (
+            f"Durable image preservation complete. Eligible {summary['eligible_count']}, "
+            f"attempted {summary['brands_attempted']} brand(s) "
+            f"(limit {summary['limit']} per click), updated {summary['brands_updated']}, "
+            f"saved {summary['images_saved']} image(s), reused {summary['images_reused']}, "
+            f"failed {summary['images_failed']}. No Apify calls were made."
+        )
+        if summary["errors"]:
+            message += f" First error: {summary['errors'][0]}"
+        flash(message)
+    except Exception as exc:
+        flash(f"Durable image preservation failed safely: {str(exc)}")
+    return redirect(url_for("seo_brand_cache_admin"))
+
+
 @app.route("/admin/seo-brand-cache/<brand_slug>/unpublish", methods=["POST"])
 @admin_required
 def unpublish_seo_brand_route(brand_slug):
@@ -6147,6 +6766,46 @@ def brand_page(brand_slug):
         canonical_url=canonical_url,
         **structured_data,
     )
+
+
+@app.route("/seo-ad-image/<int:image_id>")
+def seo_ad_image(image_id):
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT content_type, byte_size, image_data, content_hash
+                    FROM seo_ad_images
+                    WHERE id = %s
+                    """,
+                    (image_id,),
+                )
+                row = cur.fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        abort(404)
+    content_type = (row[0] or "").lower()
+    image_data = bytes(row[2] or b"")
+    stored_size = int(row[1] or 0)
+    if (
+        content_type not in SAFE_SEO_IMAGE_CONTENT_TYPES
+        or not image_data
+        or stored_size != len(image_data)
+        or len(image_data) > SEO_DURABLE_IMAGE_ABSOLUTE_MAX_BYTES
+        or detect_safe_image_content_type(image_data) != content_type
+    ):
+        abort(404)
+
+    response = Response(image_data, mimetype=content_type)
+    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    response.headers["Content-Length"] = str(len(image_data))
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.set_etag(row[3])
+    return response.make_conditional(request)
 
 @app.route("/robots.txt")
 def robots_txt():

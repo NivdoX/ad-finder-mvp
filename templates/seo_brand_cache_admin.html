@@ -46,6 +46,13 @@
                 Allowed: {{ 'Yes' if refresh_safety.bulk_refresh_allowed else 'No' }}
             </p>
         </form>
+        <form method="post" action="{{ url_for('preserve_missing_durable_seo_images_route') }}">
+            <button class="secondary-button" type="submit">Preserve missing durable images</button>
+            <p class="muted">
+                Eligible: {{ refresh_estimates.missing_durable_images }} · Maximum this click: 3 ·
+                Uses saved snapshot URLs only · No Apify calls
+            </p>
+        </form>
     </div>
 </div>
 
@@ -136,7 +143,22 @@
     <div class="panel">
         <div class="pill">SEO ready</div>
         <h3>{{ cache_summary.seo_ready }}</h3>
-        <p class="muted">Durable snapshot with images</p>
+        <p class="muted">At least one durable image</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Durable</div>
+        <h3>{{ cache_summary.durable_images_ready }}</h3>
+        <p class="muted">All previews saved durably</p>
+    </div>
+    <div class="panel">
+        <div class="pill">External only</div>
+        <h3>{{ cache_summary.external_images_only }}</h3>
+        <p class="muted">Images still depend on a CDN</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Needs durable</div>
+        <h3>{{ cache_summary.needs_durable_images }}</h3>
+        <p class="muted">Saved previews need preservation</p>
     </div>
     <div class="panel">
         <div class="pill">Stale</div>
@@ -173,7 +195,8 @@
                     <th>SEO status</th>
                     <th>Page source</th>
                     <th>Previews</th>
-                    <th>Usable images</th>
+                    <th>External images</th>
+                    <th>Durable images</th>
                     <th>Snapshot</th>
                     <th>Country</th>
                     <th>Fetched</th>
@@ -206,6 +229,13 @@
                             {% if row.seo_ready %}
                                 <span class="pill cache-status qualified">SEO ready</span>
                             {% endif %}
+                            {% if row.durable_images_ready %}
+                                <span class="pill cache-status qualified">Durable images ready</span>
+                            {% elif row.external_images_only %}
+                                <span class="pill cache-status expired">External images only</span>
+                            {% elif row.needs_durable_images %}
+                                <span class="pill cache-status no_active_ads">Needs durable images</span>
+                            {% endif %}
                             {% if row.needs_images %}
                                 <span class="pill cache-status no_active_ads">Needs images</span>
                             {% endif %}
@@ -216,7 +246,7 @@
                                 <span class="pill cache-status failed">Failed</span>
                             {% elif row.quality_status == 'quality_empty' %}
                                 <span class="pill cache-status not_refreshed">Empty</span>
-                            {% elif not row.seo_ready and not row.needs_images %}
+                            {% elif not row.seo_ready and not row.needs_images and not row.external_images_only and not row.needs_durable_images %}
                                 <span class="pill cache-status no_active_ads">Needs snapshot</span>
                             {% endif %}
                         </td>
@@ -240,12 +270,14 @@
                                 -
                             {% endif %}
                         </td>
-                        <td>{{ row.usable_image_count }} / {{ row.preview_count }}</td>
+                        <td>{{ row.external_image_count }} / {{ row.preview_count }}</td>
+                        <td>{{ row.durable_image_count }} / {{ row.preview_count }}</td>
                         <td>
                             {% if row.snapshot_captured_at %}
                                 {{ row.snapshot_captured_at }}
                                 <div class="muted">
-                                    {{ row.snapshot_ad_count }} ads / {{ row.snapshot_image_count }} images
+                                    {{ row.snapshot_ad_count }} ads / {{ row.snapshot_image_count }} usable /
+                                    {{ row.snapshot_durable_image_count }} durable
                                 </div>
                                 {% if row.snapshot_is_stale %}
                                     <span class="pill cache-status expired">Stale</span>
