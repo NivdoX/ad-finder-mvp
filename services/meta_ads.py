@@ -206,6 +206,48 @@ class MetaAdsServiceError(Exception):
     pass
 
 
+class MetaAdsPlatformLimitError(MetaAdsServiceError):
+    def __init__(self, provider_message: str = ""):
+        super().__init__(
+            "Could not complete the search right now. Please try again in a moment. This search was not counted."
+        )
+        self.provider_message = provider_message[:1000]
+
+
+APIFY_PLATFORM_LIMIT_MARKERS = (
+    "monthly usage",
+    "platform usage",
+    "usage limit",
+    "usage exceeded",
+    "quota exceeded",
+    "exceeded your usage",
+    "exceeded their usage",
+    "not enough platform usage",
+)
+
+
+def is_apify_platform_limit_message(value: Any) -> bool:
+    text = str(value or "").lower()
+    return any(marker in text for marker in APIFY_PLATFORM_LIMIT_MARKERS)
+
+
+def _response_error_text(response) -> str:
+    try:
+        payload = response.json()
+    except (TypeError, ValueError):
+        payload = None
+    if isinstance(payload, dict):
+        parts = [
+            payload.get("error"),
+            payload.get("message"),
+            payload.get("detail"),
+        ]
+        text = " ".join(str(part) for part in parts if part)
+        if text:
+            return text[:2000]
+    return str(getattr(response, "text", "") or "")[:2000]
+
+
 class MetaAdsService:
     REQUEST_TIMEOUT_SECONDS = 90
 
@@ -280,6 +322,9 @@ class MetaAdsService:
             ) from exc
 
         if response.status_code not in (200, 201):
+            provider_error = _response_error_text(response)
+            if is_apify_platform_limit_message(provider_error):
+                raise MetaAdsPlatformLimitError(provider_error)
             raise MetaAdsServiceError(
                 "Could not complete the search right now. Please try again in a moment. This search was not counted."
             )
@@ -292,9 +337,21 @@ class MetaAdsService:
             ) from exc
 
         if not isinstance(raw_items, list):
+            if is_apify_platform_limit_message(raw_items):
+                raise MetaAdsPlatformLimitError(str(raw_items))
             raise MetaAdsServiceError(
                 "Could not read ad results. Please try again in a moment. This search was not counted."
             )
+
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            provider_error = " ".join(
+                str(item.get(key) or "")
+                for key in ("error", "message", "detail")
+            )
+            if is_apify_platform_limit_message(provider_error):
+                raise MetaAdsPlatformLimitError(provider_error)
 
         normalized: List[Dict[str, Any]] = []
         for item in raw_items:

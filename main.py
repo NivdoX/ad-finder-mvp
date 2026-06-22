@@ -31,6 +31,7 @@ from services.ad_relevance import AdRelevanceFilter
 from services.meta_ads import (
     MetaAdsService,
     MetaAdsServiceError,
+    MetaAdsPlatformLimitError,
     extract_best_image_url,
 )
 from seo_brands import (
@@ -46,6 +47,21 @@ from seo_candidate_seeds import (
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "").strip()
+
+
+def env_int(name: str, default: int, minimum: int = 0) -> int:
+    try:
+        return max(minimum, int(os.getenv(name, str(default)).strip()))
+    except (TypeError, ValueError):
+        return default
+
+
+def env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
 
 APP_BASE_URL = os.getenv("APP_BASE_URL", "").strip() or "https://getrunningads.com"
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -86,7 +102,13 @@ SEO_BRAND_CACHE_TTL_HOURS = 72
 SEO_BRAND_PREVIEW_COUNT = 3
 SEO_BRAND_REFRESH_MAX_RESULTS = 12
 SEO_BRAND_CACHE_REFRESH_MAX_RESULTS = 50
-SEO_STALE_CACHE_REFRESH_LIMIT = 5
+SEO_REFRESH_MAX_BRANDS_PER_CLICK = env_int("SEO_REFRESH_MAX_BRANDS_PER_CLICK", 3, minimum=1)
+SEO_REFRESH_MAX_APIFY_CALLS_PER_DAY = env_int("SEO_REFRESH_MAX_APIFY_CALLS_PER_DAY", 10)
+SEO_REFRESH_DISABLE_BULK = env_bool("SEO_REFRESH_DISABLE_BULK", False)
+SEO_STALE_CACHE_REFRESH_LIMIT = SEO_REFRESH_MAX_BRANDS_PER_CLICK
+SEO_REFRESH_RUN_TYPE_PATTERN = "seo_cache_refresh_%"
+SEO_REFRESH_ADVISORY_LOCK_ID = 73190422
+APIFY_USAGE_LIMIT_MESSAGE = "Apify usage limit reached. No further refreshes were attempted."
 SEO_CANDIDATE_TEST_COUNTRY = "US"
 SEO_CANDIDATE_TEST_MAX_RESULTS = 25
 SEO_CANDIDATE_MAX_QUERY_VARIANTS = 3
@@ -317,6 +339,8 @@ def ensure_schema():
                         rejected INTEGER DEFAULT 0,
                         failed INTEGER DEFAULT 0,
                         apify_runs INTEGER DEFAULT 0,
+                        brands_attempted INTEGER DEFAULT 0,
+                        platform_limit_reached BOOLEAN DEFAULT FALSE,
                         error TEXT
                     );
                     """
@@ -463,6 +487,8 @@ def ensure_schema():
                 cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS rejected INTEGER DEFAULT 0;")
                 cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS failed INTEGER DEFAULT 0;")
                 cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS apify_runs INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS brands_attempted INTEGER DEFAULT 0;")
+                cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS platform_limit_reached BOOLEAN DEFAULT FALSE;")
                 cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS error TEXT;")
 
                 cur.execute(
@@ -1995,12 +2021,16 @@ def fetch_candidate_validation_ads(
 
     for variant in variants:
         diagnostics["apify_runs"] += 1
-        search_result = service.search_ads_with_diagnostics(
-            brand=variant,
-            country=country,
-            max_results=max_results,
-            include_young_ads=True,
-        )
+        try:
+            search_result = service.search_ads_with_diagnostics(
+                brand=variant,
+                country=country,
+                max_results=max_results,
+                include_young_ads=True,
+            )
+        except MetaAdsServiceError as exc:
+            exc.apify_runs = diagnostics["apify_runs"]
+            raise
         normalized_ads = search_result["ads"]
         filtered_ads = relevance_filter.filter_ads(
             search_brand=candidate["brand_name"],
@@ -2159,6 +2189,8 @@ def finish_seo_automation_run(run_id: int, status: str, counts: dict, error: str
                         rejected = %s,
                         failed = %s,
                         apify_runs = %s,
+                        brands_attempted = %s,
+                        platform_limit_reached = %s,
                         error = %s
                     WHERE id = %s
                     """,
@@ -2170,10 +2202,138 @@ def finish_seo_automation_run(run_id: int, status: str, counts: dict, error: str
                         counts.get("rejected", 0),
                         counts.get("failed", 0),
                         counts.get("apify_runs", counts.get("tested", 0)),
+                        counts.get("brands_attempted", 0),
+                        bool(counts.get("platform_limit_reached", False)),
                         error[:1000] if error else None,
                         run_id,
                     ),
                 )
+    finally:
+        conn.close()
+
+
+def get_seo_refresh_daily_usage():
+    day_start, _ = get_today_range()
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COALESCE(SUM(apify_runs), 0),
+                           COALESCE(SUM(brands_attempted), 0),
+                           COALESCE(BOOL_OR(platform_limit_reached), FALSE)
+                    FROM seo_automation_runs
+                    WHERE started_at >= %s
+                      AND run_type LIKE %s
+                    """,
+                    (day_start, SEO_REFRESH_RUN_TYPE_PATTERN),
+                )
+                today_row = cur.fetchone()
+                cur.execute(
+                    """
+                    SELECT error, COALESCE(finished_at, started_at)
+                    FROM seo_automation_runs
+                    WHERE run_type LIKE %s
+                      AND platform_limit_reached = TRUE
+                    ORDER BY started_at DESC
+                    LIMIT 1
+                    """,
+                    (SEO_REFRESH_RUN_TYPE_PATTERN,),
+                )
+                limit_row = cur.fetchone()
+    finally:
+        conn.close()
+
+    apify_calls = int(today_row[0] or 0)
+    remaining = max(0, SEO_REFRESH_MAX_APIFY_CALLS_PER_DAY - apify_calls)
+    return {
+        "apify_calls_today": apify_calls,
+        "brands_attempted_today": int(today_row[1] or 0),
+        "daily_limit": SEO_REFRESH_MAX_APIFY_CALLS_PER_DAY,
+        "remaining_calls": remaining,
+        "platform_limit_reached_today": bool(today_row[2]),
+        "last_limit_error": limit_row[0] if limit_row else None,
+        "last_limit_at": limit_row[1] if limit_row else None,
+    }
+
+
+def get_seo_refresh_safety_status():
+    usage = get_seo_refresh_daily_usage()
+    refresh_allowed = bool(
+        usage["remaining_calls"] > 0
+        and not usage["platform_limit_reached_today"]
+    )
+    return {
+        **usage,
+        "max_brands_per_click": SEO_REFRESH_MAX_BRANDS_PER_CLICK,
+        "max_brands_this_click": min(
+            SEO_REFRESH_MAX_BRANDS_PER_CLICK,
+            usage["remaining_calls"],
+        ),
+        "bulk_disabled": SEO_REFRESH_DISABLE_BULK,
+        "refresh_allowed": refresh_allowed,
+        "bulk_refresh_allowed": bool(refresh_allowed and not SEO_REFRESH_DISABLE_BULK),
+    }
+
+
+def reserve_seo_refresh_run(run_type: str, requested_calls: int):
+    requested_calls = max(1, int(requested_calls or 1))
+    day_start, _ = get_today_range()
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT pg_advisory_xact_lock(%s)",
+                    (SEO_REFRESH_ADVISORY_LOCK_ID,),
+                )
+                cur.execute(
+                    """
+                    SELECT COALESCE(SUM(apify_runs), 0),
+                           COALESCE(BOOL_OR(platform_limit_reached), FALSE)
+                    FROM seo_automation_runs
+                    WHERE started_at >= %s
+                      AND run_type LIKE %s
+                    """,
+                    (day_start, SEO_REFRESH_RUN_TYPE_PATTERN),
+                )
+                row = cur.fetchone()
+                used_calls = int(row[0] or 0)
+                if bool(row[1]):
+                    return {
+                        "run_id": None,
+                        "reserved_calls": 0,
+                        "remaining_calls": max(0, SEO_REFRESH_MAX_APIFY_CALLS_PER_DAY - used_calls),
+                        "blocked_reason": "apify_limit",
+                    }
+
+                remaining_calls = max(0, SEO_REFRESH_MAX_APIFY_CALLS_PER_DAY - used_calls)
+                if remaining_calls <= 0:
+                    return {
+                        "run_id": None,
+                        "reserved_calls": 0,
+                        "remaining_calls": 0,
+                        "blocked_reason": "daily_limit",
+                    }
+
+                reserved_calls = min(requested_calls, remaining_calls)
+                cur.execute(
+                    """
+                    INSERT INTO seo_automation_runs (
+                        run_type, status, started_at, apify_runs
+                    )
+                    VALUES (%s, 'reserved', NOW(), %s)
+                    RETURNING id
+                    """,
+                    (run_type, reserved_calls),
+                )
+                return {
+                    "run_id": cur.fetchone()[0],
+                    "reserved_calls": reserved_calls,
+                    "remaining_calls": remaining_calls,
+                    "blocked_reason": "",
+                }
     finally:
         conn.close()
 
@@ -3753,13 +3913,18 @@ def get_missing_snapshot_image_refresh_targets(limit: int = SEO_STALE_CACHE_REFR
 
 
 def refresh_seo_brand_cache_targets(target_data, run_type: str):
-    settings = get_seo_automation_settings()
-    usage = get_seo_automation_daily_usage()
-    daily_run_limit = int(settings.get("daily_apify_run_limit") or 0)
-    remaining_apify_runs = max(0, daily_run_limit - int(usage.get("apify_runs") or 0))
+    safety = get_seo_refresh_safety_status()
+    targets = target_data["targets"][:SEO_REFRESH_MAX_BRANDS_PER_CLICK]
     summary = {
         "brands_checked": target_data["brands_checked"],
         "eligible_count": target_data["eligible_count"],
+        "estimated_brands_selected": target_data["eligible_count"],
+        "max_brands_attempted": min(
+            len(targets),
+            SEO_REFRESH_MAX_BRANDS_PER_CLICK,
+            safety["remaining_calls"],
+        ),
+        "brands_attempted": 0,
         "brands_refreshed": 0,
         "brands_updated_with_previews": 0,
         "brands_preserved": 0,
@@ -3769,27 +3934,55 @@ def refresh_seo_brand_cache_targets(target_data, run_type: str):
         "limit": target_data["limit"],
         "errors": [],
         "apify_runs": 0,
-        "daily_apify_run_limit": daily_run_limit,
-        "remaining_apify_runs": remaining_apify_runs,
+        "daily_apify_run_limit": safety["daily_limit"],
+        "remaining_apify_runs": safety["remaining_calls"],
+        "refresh_allowed": safety["refresh_allowed"],
+        "bulk_disabled": safety["bulk_disabled"],
+        "platform_limit_reached": False,
+        "service_unavailable": False,
         "blocked_reason": "",
     }
 
-    if settings.get("kill_switch_enabled"):
-        summary["blocked_reason"] = "SEO automation kill switch is enabled."
+    if safety["bulk_disabled"]:
+        summary["blocked_reason"] = "Bulk SEO cache refresh is disabled."
         return summary
-    if remaining_apify_runs <= 0:
-        summary["blocked_reason"] = "Daily Apify run limit has been reached."
+    if safety["platform_limit_reached_today"]:
+        summary["blocked_reason"] = APIFY_USAGE_LIMIT_MESSAGE
+        return summary
+    if safety["remaining_calls"] <= 0:
+        summary["blocked_reason"] = "SEO refresh daily safety limit reached. No refreshes were attempted."
+        return summary
+    if not targets:
         return summary
 
-    run_id = create_seo_automation_run(run_type=run_type)
+    requested_calls = len(targets) * SEO_CANDIDATE_MAX_QUERY_VARIANTS
+    reservation = reserve_seo_refresh_run(run_type, requested_calls)
+    if reservation["blocked_reason"]:
+        summary["blocked_reason"] = (
+            APIFY_USAGE_LIMIT_MESSAGE
+            if reservation["blocked_reason"] == "apify_limit"
+            else "SEO refresh daily safety limit reached. No refreshes were attempted."
+        )
+        summary["refresh_allowed"] = False
+        summary["remaining_apify_runs"] = reservation["remaining_calls"]
+        return summary
 
-    for target in target_data["targets"]:
+    run_id = reservation["run_id"]
+    remaining_apify_runs = reservation["reserved_calls"]
+    summary["max_brands_attempted"] = min(
+        len(targets),
+        SEO_REFRESH_MAX_BRANDS_PER_CLICK,
+        remaining_apify_runs,
+    )
+
+    for target in targets[:summary["max_brands_attempted"]]:
         if remaining_apify_runs <= 0:
             break
         brand = target["brand"]
         cached = target["cache"]
         existing_preview_count = int(cached.get("preview_count") or 0)
         allowed_attempts = min(SEO_CANDIDATE_MAX_QUERY_VARIANTS, remaining_apify_runs)
+        summary["brands_attempted"] += 1
         try:
             refresh_result = refresh_published_seo_brand_ads_cache(
                 brand,
@@ -3805,18 +3998,25 @@ def refresh_seo_brand_cache_targets(target_data, run_type: str):
                 summary["brands_preserved"] += 1
             else:
                 summary["brands_no_previews"] += 1
+        except MetaAdsPlatformLimitError as exc:
+            apify_runs = max(1, int(getattr(exc, "apify_runs", 1) or 1))
+            summary["apify_runs"] += apify_runs
+            remaining_apify_runs = max(0, remaining_apify_runs - apify_runs)
+            summary["platform_limit_reached"] = True
+            summary["refresh_allowed"] = False
+            summary["errors"].append(APIFY_USAGE_LIMIT_MESSAGE)
+            break
         except MetaAdsServiceError as exc:
             error_message = str(exc)
-            summary["apify_runs"] += allowed_attempts
-            remaining_apify_runs = max(0, remaining_apify_runs - allowed_attempts)
-            summary["brands_failed"] += 1
+            apify_runs = max(1, int(getattr(exc, "apify_runs", 1) or 1))
+            summary["apify_runs"] += apify_runs
+            remaining_apify_runs = max(0, remaining_apify_runs - apify_runs)
+            summary["service_unavailable"] = True
+            summary["refresh_allowed"] = False
             if "timed out" in error_message.lower():
                 summary["timeouts"] += 1
             summary["errors"].append(f"{brand['name']}: {error_message}")
-            try:
-                save_seo_brand_cache_error(brand, error_message, country=SEO_CANDIDATE_TEST_COUNTRY)
-            except Exception as save_exc:
-                print("SEO stale cache error save failed:", str(save_exc))
+            break
         except Exception as exc:
             error_message = str(exc)
             summary["apify_runs"] += allowed_attempts
@@ -3828,16 +4028,33 @@ def refresh_seo_brand_cache_targets(target_data, run_type: str):
             except Exception as save_exc:
                 print("SEO stale cache error save failed:", str(save_exc))
 
-    summary["remaining_apify_runs"] = remaining_apify_runs
+    summary["remaining_apify_runs"] = max(
+        0,
+        reservation["remaining_calls"] - summary["apify_runs"],
+    )
+    if summary["platform_limit_reached"]:
+        run_status = "apify_limit_reached"
+        run_error = APIFY_USAGE_LIMIT_MESSAGE
+    elif summary["service_unavailable"]:
+        run_status = "apify_unavailable"
+        run_error = "; ".join(summary["errors"][:3])
+    elif summary["brands_failed"]:
+        run_status = "completed_with_errors"
+        run_error = "; ".join(summary["errors"][:3])
+    else:
+        run_status = "completed"
+        run_error = ""
     finish_seo_automation_run(
         run_id,
-        "completed_with_errors" if summary["brands_failed"] else "completed",
+        run_status,
         {
             "tested": 0,
             "failed": summary["brands_failed"],
             "apify_runs": summary["apify_runs"],
+            "brands_attempted": summary["brands_attempted"],
+            "platform_limit_reached": summary["platform_limit_reached"],
         },
-        "; ".join(summary["errors"][:3]),
+        run_error,
     )
     return summary
 
@@ -4638,10 +4855,18 @@ Give a short weekly-style summary:
 @admin_required
 def seo_brand_cache_admin():
     cache_admin_data = get_seo_brand_cache_admin_rows()
+    refresh_safety = get_seo_refresh_safety_status()
+    refresh_estimates = {
+        "stale": get_stale_seo_cache_refresh_targets()["eligible_count"],
+        "missing_snapshots": get_missing_snapshot_refresh_targets()["eligible_count"],
+        "missing_images": get_missing_snapshot_image_refresh_targets()["eligible_count"],
+    }
     return render_template(
         "seo_brand_cache_admin.html",
         cache_rows=cache_admin_data["rows"],
         cache_summary=cache_admin_data["summary"],
+        refresh_safety=refresh_safety,
+        refresh_estimates=refresh_estimates,
     )
 
 
@@ -5415,12 +5640,48 @@ def refresh_seo_brand_cache(brand_slug):
         abort(404)
 
     country = SEO_CANDIDATE_TEST_COUNTRY
+    reservation = reserve_seo_refresh_run(
+        "seo_cache_refresh_individual",
+        SEO_CANDIDATE_MAX_QUERY_VARIANTS,
+    )
+    if reservation["blocked_reason"]:
+        error_message = (
+            APIFY_USAGE_LIMIT_MESSAGE
+            if reservation["blocked_reason"] == "apify_limit"
+            else "SEO refresh daily safety limit reached. No refresh was attempted."
+        )
+        if request.form.get("return_to_admin") == "1":
+            flash(error_message)
+            return redirect(url_for("seo_brand_cache_admin"))
+        return jsonify(
+            {
+                "ok": False,
+                "brand_slug": brand["slug"],
+                "brand_name": brand["name"],
+                "error": error_message,
+            }
+        ), 429
+
+    run_id = reservation["run_id"]
+    max_variant_attempts = reservation["reserved_calls"]
 
     try:
-        refresh_result = refresh_published_seo_brand_ads_cache(brand)
+        refresh_result = refresh_published_seo_brand_ads_cache(
+            brand,
+            max_variant_attempts=max_variant_attempts,
+        )
         result_count = refresh_result["result_count"]
         preview_count = refresh_result["preview_count"]
         diagnostics = refresh_result.get("diagnostics") or {}
+        apify_runs = max(1, int(diagnostics.get("apify_runs") or 1))
+        finish_seo_automation_run(
+            run_id,
+            "completed",
+            {
+                "apify_runs": apify_runs,
+                "brands_attempted": 1,
+            },
+        )
         preserved_existing_previews = bool(refresh_result.get("preserved_existing_previews"))
         diagnostic_summary = {
             "raw_apify_count": int(diagnostics.get("raw_result_count") or 0),
@@ -5454,15 +5715,45 @@ def refresh_seo_brand_cache(brand_slug):
             }
         )
 
+    except MetaAdsPlatformLimitError as exc:
+        apify_runs = max(1, int(getattr(exc, "apify_runs", 1) or 1))
+        finish_seo_automation_run(
+            run_id,
+            "apify_limit_reached",
+            {
+                "apify_runs": apify_runs,
+                "brands_attempted": 1,
+                "platform_limit_reached": True,
+            },
+            APIFY_USAGE_LIMIT_MESSAGE,
+        )
+        if request.form.get("return_to_admin") == "1":
+            flash(APIFY_USAGE_LIMIT_MESSAGE)
+            return redirect(url_for("seo_brand_cache_admin"))
+        return jsonify(
+            {
+                "ok": False,
+                "brand_slug": brand["slug"],
+                "brand_name": brand["name"],
+                "error": APIFY_USAGE_LIMIT_MESSAGE,
+            }
+        ), 429
+
     except MetaAdsServiceError as exc:
         error_message = str(exc)
-        try:
-            save_seo_brand_cache_error(brand, error_message, country=country)
-        except Exception as save_exc:
-            print("SEO brand cache error save failed:", str(save_exc))
+        apify_runs = max(1, int(getattr(exc, "apify_runs", 1) or 1))
+        finish_seo_automation_run(
+            run_id,
+            "apify_unavailable",
+            {
+                "apify_runs": apify_runs,
+                "brands_attempted": 1,
+            },
+            error_message,
+        )
 
         if request.form.get("return_to_admin") == "1":
-            flash(f"{brand['name']} SEO cache refresh failed: {error_message}")
+            flash(f"{brand['name']} SEO cache refresh stopped because Apify was unavailable: {error_message}")
             return redirect(url_for("seo_brand_cache_admin"))
 
         return jsonify(
@@ -5477,6 +5768,16 @@ def refresh_seo_brand_cache(brand_slug):
     except Exception as exc:
         error_message = str(exc)
         print("SEO brand cache refresh error:", error_message)
+        finish_seo_automation_run(
+            run_id,
+            "completed_with_errors",
+            {
+                "apify_runs": max_variant_attempts,
+                "brands_attempted": 1,
+                "failed": 1,
+            },
+            error_message,
+        )
         try:
             save_seo_brand_cache_error(brand, error_message, country=country)
         except Exception as save_exc:
@@ -5511,14 +5812,22 @@ def refresh_stale_seo_brand_cache():
 def format_seo_cache_refresh_summary(label: str, summary):
     if summary.get("blocked_reason"):
         return f"{label} did not run: {summary['blocked_reason']}"
+    if summary.get("platform_limit_reached"):
+        return (
+            f"{APIFY_USAGE_LIMIT_MESSAGE} Attempted {summary['brands_attempted']} brand(s) "
+            f"and {summary['apify_runs']} Apify call(s)."
+        )
     message = (
-        f"{label} complete. Checked {summary['brands_checked']} brands, "
-        f"eligible {summary['eligible_count']}, refreshed {summary['brands_refreshed']} "
-        f"(limit {summary['limit']} per click), updated with previews "
+        f"{label} complete. Estimated {summary['estimated_brands_selected']} eligible brand(s), "
+        f"maximum {summary['max_brands_attempted']} this click, attempted {summary['brands_attempted']}, "
+        f"refreshed {summary['brands_refreshed']}, updated with previews "
         f"{summary['brands_updated_with_previews']}, preserved {summary['brands_preserved']}, "
         f"failed {summary['brands_failed']}, timeouts {summary['timeouts']}, "
-        f"Apify runs {summary['apify_runs']}/{summary['daily_apify_run_limit']} daily limit."
+        f"Apify calls {summary['apify_runs']}; remaining today {summary['remaining_apify_runs']} "
+        f"of {summary['daily_apify_run_limit']}."
     )
+    if summary.get("service_unavailable"):
+        message += " Batch stopped because Apify was unavailable."
     if summary["brands_no_previews"]:
         message += f" No previews found for {summary['brands_no_previews']}."
     if summary["errors"]:

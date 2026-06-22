@@ -10,24 +10,82 @@
             Refresh cached ad previews for public brand pages. Public pages only read from this cache.
         </p>
         <p class="muted">
-            Stale refresh processes up to 5 eligible brands per click using the US candidate-style refresh path.
+            Bulk refresh processes up to {{ refresh_safety.max_brands_per_click }} eligible brands per click.
         </p>
+        {% if refresh_safety.platform_limit_reached_today %}
+            <p class="danger-note">Apify usage limit reached. No further refreshes were attempted.</p>
+        {% elif not refresh_safety.refresh_allowed %}
+            <p class="danger-note">SEO refresh daily safety limit reached. No refreshes are currently allowed.</p>
+        {% endif %}
         <p>
             <a class="topbar-btn primary" href="{{ url_for('seo_brand_candidates') }}">Test candidate brand</a>
             <a class="topbar-btn" href="{{ url_for('seo_market_audit') }}">Market audit</a>
             <a class="topbar-btn" href="{{ url_for('admin') }}">Back to admin</a>
         </p>
         <form method="post" action="{{ url_for('refresh_stale_seo_brand_cache') }}">
-            <button class="form-button" type="submit">Refresh stale SEO caches</button>
+            <button class="form-button" type="submit" {% if not refresh_safety.bulk_refresh_allowed %}disabled{% endif %}>Refresh stale SEO caches</button>
+            <p class="muted">
+                Eligible: {{ refresh_estimates.stale }} · Maximum this click: {{ refresh_safety.max_brands_this_click }} ·
+                Remaining calls: {{ refresh_safety.remaining_calls }} ·
+                Allowed: {{ 'Yes' if refresh_safety.bulk_refresh_allowed else 'No' }}
+            </p>
         </form>
         <form method="post" action="{{ url_for('refresh_missing_seo_snapshots') }}">
-            <button class="secondary-button" type="submit">Refresh brands missing snapshots</button>
+            <button class="secondary-button" type="submit" {% if not refresh_safety.bulk_refresh_allowed %}disabled{% endif %}>Refresh brands missing snapshots</button>
+            <p class="muted">
+                Eligible: {{ refresh_estimates.missing_snapshots }} · Maximum this click: {{ refresh_safety.max_brands_this_click }} ·
+                Remaining calls: {{ refresh_safety.remaining_calls }} ·
+                Allowed: {{ 'Yes' if refresh_safety.bulk_refresh_allowed else 'No' }}
+            </p>
         </form>
         <form method="post" action="{{ url_for('refresh_missing_seo_snapshot_images') }}">
-            <button class="secondary-button" type="submit">Refresh brands missing images</button>
+            <button class="secondary-button" type="submit" {% if not refresh_safety.bulk_refresh_allowed %}disabled{% endif %}>Refresh brands missing images</button>
+            <p class="muted">
+                Eligible: {{ refresh_estimates.missing_images }} · Maximum this click: {{ refresh_safety.max_brands_this_click }} ·
+                Remaining calls: {{ refresh_safety.remaining_calls }} ·
+                Allowed: {{ 'Yes' if refresh_safety.bulk_refresh_allowed else 'No' }}
+            </p>
         </form>
     </div>
 </div>
+
+<div class="simple-grid five-col">
+    <div class="panel">
+        <div class="pill">Apify calls</div>
+        <h3>{{ refresh_safety.apify_calls_today }} / {{ refresh_safety.daily_limit }}</h3>
+        <p class="muted">Reserved or attempted today</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Brands</div>
+        <h3>{{ refresh_safety.brands_attempted_today }}</h3>
+        <p class="muted">Refreshes attempted today</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Remaining</div>
+        <h3>{{ refresh_safety.remaining_calls }}</h3>
+        <p class="muted">Apify calls today</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Bulk refresh</div>
+        <h3>{{ 'Disabled' if refresh_safety.bulk_disabled else 'Enabled' }}</h3>
+        <p class="muted">Environment control</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Refresh</div>
+        <h3>{{ 'Allowed' if refresh_safety.refresh_allowed else 'Blocked' }}</h3>
+        <p class="muted">Current safety state</p>
+    </div>
+</div>
+
+{% if refresh_safety.last_limit_error %}
+    <div class="simple-grid">
+        <div class="panel">
+            <div class="pill">Last Apify limit</div>
+            <p class="danger-note">{{ refresh_safety.last_limit_error }}</p>
+            <p class="muted">{{ refresh_safety.last_limit_at or '-' }}</p>
+        </div>
+    </div>
+{% endif %}
 
 <div class="simple-grid five-col">
     <div class="panel">
@@ -95,9 +153,15 @@
             action="{{ url_for('refresh_selected_seo_brand_cache') }}"
         ></form>
         <p>
-            <button class="secondary-button" type="submit" form="refresh-selected-seo-brands">
+            <button class="secondary-button" type="submit" form="refresh-selected-seo-brands" {% if not refresh_safety.bulk_refresh_allowed %}disabled{% endif %}>
                 Refresh selected brands
             </button>
+            <span class="muted">
+                Selected: <span id="selected-seo-brand-count">0</span> ·
+                Maximum this click: {{ refresh_safety.max_brands_this_click }} ·
+                Remaining calls: {{ refresh_safety.remaining_calls }} ·
+                Allowed: {{ 'Yes' if refresh_safety.bulk_refresh_allowed else 'No' }}
+            </span>
         </p>
         <table class="table">
             <thead>
@@ -235,4 +299,15 @@
         </table>
     </div>
 </div>
+<script>
+    (() => {
+        const checkboxes = document.querySelectorAll('input[name="brand_slugs"][form="refresh-selected-seo-brands"]');
+        const countTarget = document.getElementById('selected-seo-brand-count');
+        const updateCount = () => {
+            countTarget.textContent = Array.from(checkboxes).filter((checkbox) => checkbox.checked).length;
+        };
+        checkboxes.forEach((checkbox) => checkbox.addEventListener('change', updateCount));
+        updateCount();
+    })();
+</script>
 {% endblock %}
