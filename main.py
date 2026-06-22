@@ -1,5 +1,6 @@
 import gc
 import hashlib
+import io
 import ipaddress
 import json
 import os
@@ -31,6 +32,7 @@ from flask import (
     url_for,
 )
 from openai import OpenAI
+from PIL import Image, ImageOps, UnidentifiedImageError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from services.ad_relevance import AdRelevanceFilter
@@ -122,6 +124,9 @@ SEO_DURABLE_IMAGE_MAX_BYTES = min(
     env_int("SEO_DURABLE_IMAGE_MAX_BYTES", 500_000, minimum=50_000),
 )
 SEO_DURABLE_IMAGE_MAX_BRANDS_PER_CLICK = 3
+SEO_DURABLE_IMAGE_MAX_SOURCE_BYTES = 8_000_000
+SEO_DURABLE_IMAGE_MAX_SOURCE_PIXELS = 12_000_000
+SEO_DURABLE_IMAGE_MAX_DIMENSION = 900
 SEO_DURABLE_IMAGE_MAX_REDIRECTS = 3
 SEO_DURABLE_IMAGE_CONNECT_TIMEOUT_SECONDS = 5
 SEO_DURABLE_IMAGE_READ_TIMEOUT_SECONDS = 12
@@ -277,6 +282,7 @@ def ensure_schema():
                         content_hash TEXT NOT NULL,
                         content_type TEXT NOT NULL,
                         byte_size INTEGER NOT NULL,
+                        original_byte_size INTEGER,
                         image_data BYTEA NOT NULL,
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         CONSTRAINT seo_ad_images_byte_size_positive CHECK (byte_size > 0)
@@ -292,6 +298,7 @@ def ensure_schema():
                         brand_slug TEXT NOT NULL,
                         source_url TEXT NOT NULL,
                         source_url_hash TEXT NOT NULL,
+                        original_byte_size INTEGER,
                         created_at TIMESTAMPTZ DEFAULT NOW()
                     );
                     """
@@ -544,12 +551,14 @@ def ensure_schema():
                 cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS content_hash TEXT;")
                 cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS content_type TEXT;")
                 cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS byte_size INTEGER;")
+                cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS original_byte_size INTEGER;")
                 cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS image_data BYTEA;")
                 cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
                 cur.execute("ALTER TABLE seo_ad_image_sources ADD COLUMN IF NOT EXISTS image_id INTEGER;")
                 cur.execute("ALTER TABLE seo_ad_image_sources ADD COLUMN IF NOT EXISTS brand_slug TEXT;")
                 cur.execute("ALTER TABLE seo_ad_image_sources ADD COLUMN IF NOT EXISTS source_url TEXT;")
                 cur.execute("ALTER TABLE seo_ad_image_sources ADD COLUMN IF NOT EXISTS source_url_hash TEXT;")
+                cur.execute("ALTER TABLE seo_ad_image_sources ADD COLUMN IF NOT EXISTS original_byte_size INTEGER;")
                 cur.execute("ALTER TABLE seo_ad_image_sources ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
 
                 cur.execute(
@@ -1432,7 +1441,7 @@ def validate_public_image_download_url(value: str) -> str:
     return normalized_url
 
 
-def download_small_seo_image(source_url: str):
+def download_seo_image_source(source_url: str):
     current_url = source_url
     for redirect_count in range(SEO_DURABLE_IMAGE_MAX_REDIRECTS + 1):
         current_url = validate_public_image_download_url(current_url)
@@ -1470,16 +1479,16 @@ def download_small_seo_image(source_url: str):
                 declared_size = int(response.headers.get("Content-Length") or 0)
             except (TypeError, ValueError):
                 declared_size = 0
-            if declared_size > SEO_DURABLE_IMAGE_MAX_BYTES:
-                raise SeoImagePreservationError("Image exceeds the durable preview size limit.")
+            if declared_size > SEO_DURABLE_IMAGE_MAX_SOURCE_BYTES:
+                raise SeoImagePreservationError("Source image exceeds the safe optimization download limit.")
 
             chunks = bytearray()
             for chunk in response.iter_content(chunk_size=64 * 1024):
                 if not chunk:
                     continue
                 chunks.extend(chunk)
-                if len(chunks) > SEO_DURABLE_IMAGE_MAX_BYTES:
-                    raise SeoImagePreservationError("Image exceeds the durable preview size limit.")
+                if len(chunks) > SEO_DURABLE_IMAGE_MAX_SOURCE_BYTES:
+                    raise SeoImagePreservationError("Source image exceeds the safe optimization download limit.")
             image_data = bytes(chunks)
             detected_type = detect_safe_image_content_type(image_data)
             if not detected_type or detected_type != declared_type:
@@ -1491,6 +1500,64 @@ def download_small_seo_image(source_url: str):
     raise SeoImagePreservationError("Image download could not be completed.")
 
 
+def flatten_seo_preview_image(image):
+    if image.mode in {"RGBA", "LA"} or (
+        image.mode == "P" and "transparency" in image.info
+    ):
+        rgba_image = image.convert("RGBA")
+        background = Image.new("RGBA", rgba_image.size, (255, 255, 255, 255))
+        background.alpha_composite(rgba_image)
+        return background.convert("RGB")
+    return image.convert("RGB")
+
+
+def optimize_seo_image_preview(source_data: bytes):
+    try:
+        with Image.open(io.BytesIO(source_data)) as source_image:
+            width, height = source_image.size
+            if width <= 0 or height <= 0:
+                raise SeoImagePreservationError("Source image dimensions were invalid.")
+            if width * height > SEO_DURABLE_IMAGE_MAX_SOURCE_PIXELS:
+                raise SeoImagePreservationError("Source image dimensions exceed the safe processing limit.")
+            if getattr(source_image, "is_animated", False):
+                source_image.seek(0)
+            source_image.load()
+            oriented_image = ImageOps.exif_transpose(source_image)
+            rgb_image = flatten_seo_preview_image(oriented_image)
+    except SeoImagePreservationError:
+        raise
+    except (Image.DecompressionBombError, UnidentifiedImageError, OSError, ValueError) as exc:
+        raise SeoImagePreservationError("Source image could not be decoded safely.") from exc
+
+    dimension_steps = (SEO_DURABLE_IMAGE_MAX_DIMENSION, 720, 576, 460, 368)
+    quality_steps = (82, 72, 62, 52, 45)
+    for max_dimension in dimension_steps:
+        preview_image = rgb_image.copy()
+        preview_image.thumbnail(
+            (
+                min(max_dimension, SEO_DURABLE_IMAGE_MAX_DIMENSION),
+                min(max_dimension, SEO_DURABLE_IMAGE_MAX_DIMENSION),
+            ),
+            Image.Resampling.LANCZOS,
+        )
+        for quality in quality_steps:
+            output = io.BytesIO()
+            preview_image.save(
+                output,
+                format="JPEG",
+                quality=quality,
+                optimize=True,
+                progressive=True,
+            )
+            optimized_data = output.getvalue()
+            if len(optimized_data) <= SEO_DURABLE_IMAGE_MAX_BYTES:
+                return optimized_data, "image/jpeg"
+
+    raise SeoImagePreservationError(
+        "Image could not be optimized below the durable preview size limit."
+    )
+
+
 def get_durable_seo_image_by_source(source_url: str):
     source_url_hash = hashlib.sha256(source_url.encode("utf-8")).hexdigest()
     conn = get_db_connection()
@@ -1499,7 +1566,8 @@ def get_durable_seo_image_by_source(source_url: str):
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT image.id, image.content_type, image.byte_size
+                    SELECT image.id, image.content_type, image.byte_size,
+                           COALESCE(source.original_byte_size, image.original_byte_size)
                     FROM seo_ad_image_sources source
                     JOIN seo_ad_images image ON image.id = source.image_id
                     WHERE source.source_url_hash = %s
@@ -1510,7 +1578,7 @@ def get_durable_seo_image_by_source(source_url: str):
                 if not row:
                     cur.execute(
                         """
-                        SELECT id, content_type, byte_size
+                        SELECT id, content_type, byte_size, original_byte_size
                         FROM seo_ad_images
                         WHERE source_url_hash = %s
                         """,
@@ -1523,6 +1591,7 @@ def get_durable_seo_image_by_source(source_url: str):
                     "id": int(row[0]),
                     "content_type": row[1],
                     "byte_size": int(row[2] or 0),
+                    "original_byte_size": int(row[3] or 0),
                 }
     finally:
         conn.close()
@@ -1534,7 +1603,9 @@ def save_durable_seo_image(brand_slug: str, source_url: str):
     if existing:
         return existing
 
-    image_data, content_type, _ = download_small_seo_image(source_url)
+    source_data, _, _ = download_seo_image_source(source_url)
+    original_byte_size = len(source_data)
+    image_data, content_type = optimize_seo_image_preview(source_data)
     source_url_hash = hashlib.sha256(source_url.encode("utf-8")).hexdigest()
     content_hash = hashlib.sha256(image_data).hexdigest()
     conn = get_db_connection()
@@ -1545,9 +1616,9 @@ def save_durable_seo_image(brand_slug: str, source_url: str):
                     """
                     INSERT INTO seo_ad_images (
                         brand_slug, source_url, source_url_hash, content_hash,
-                        content_type, byte_size, image_data
+                        content_type, byte_size, original_byte_size, image_data
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT DO NOTHING
                     RETURNING id
                     """,
@@ -1558,6 +1629,7 @@ def save_durable_seo_image(brand_slug: str, source_url: str):
                         content_hash,
                         content_type,
                         len(image_data),
+                        original_byte_size,
                         psycopg2.Binary(image_data),
                     ),
                 )
@@ -1567,11 +1639,12 @@ def save_durable_seo_image(brand_slug: str, source_url: str):
                         "id": int(inserted[0]),
                         "content_type": content_type,
                         "byte_size": len(image_data),
+                        "original_byte_size": original_byte_size,
                     }
                 else:
                     cur.execute(
                         """
-                        SELECT id, content_type, byte_size
+                        SELECT id, content_type, byte_size, original_byte_size
                         FROM seo_ad_images
                         WHERE source_url_hash = %s OR content_hash = %s
                         ORDER BY CASE WHEN source_url_hash = %s THEN 0 ELSE 1 END
@@ -1586,17 +1659,26 @@ def save_durable_seo_image(brand_slug: str, source_url: str):
                         "id": int(row[0]),
                         "content_type": row[1],
                         "byte_size": int(row[2] or 0),
+                        "original_byte_size": int(row[3] or 0),
                     }
                 cur.execute(
                     """
                     INSERT INTO seo_ad_image_sources (
-                        image_id, brand_slug, source_url, source_url_hash
+                        image_id, brand_slug, source_url, source_url_hash,
+                        original_byte_size
                     )
-                    VALUES (%s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s)
                     ON CONFLICT (source_url_hash) DO NOTHING
                     """,
-                    (image["id"], brand_slug, source_url, source_url_hash),
+                    (
+                        image["id"],
+                        brand_slug,
+                        source_url,
+                        source_url_hash,
+                        original_byte_size,
+                    ),
                 )
+                image["original_byte_size"] = original_byte_size
                 return image
     finally:
         conn.close()
@@ -1604,11 +1686,18 @@ def save_durable_seo_image(brand_slug: str, source_url: str):
 
 def preserve_durable_images_for_ads(brand_slug: str, ads):
     preserved_ads = []
-    summary = {"attempted": 0, "saved": 0, "reused": 0, "failed": 0, "errors": []}
+    summary = {
+        "attempted": 0,
+        "saved": 0,
+        "reused": 0,
+        "already_durable": 0,
+        "failed": 0,
+        "errors": [],
+    }
     for original_ad in (ads if isinstance(ads, list) else [])[:SEO_BRAND_PREVIEW_COUNT]:
         ad = dict(original_ad) if isinstance(original_ad, dict) else {}
         if get_durable_image_id(ad):
-            summary["reused"] += 1
+            summary["already_durable"] += 1
             preserved_ads.append(ad)
             continue
 
@@ -1625,6 +1714,7 @@ def preserve_durable_images_for_ads(brand_slug: str, ads):
             ad["durable_image_id"] = image["id"]
             ad["durable_content_type"] = image["content_type"]
             ad["durable_byte_size"] = image["byte_size"]
+            ad["durable_original_byte_size"] = image.get("original_byte_size") or 0
             summary["reused" if existing else "saved"] += 1
         except Exception as exc:
             summary["failed"] += 1
@@ -1687,6 +1777,7 @@ SEO_SNAPSHOT_AD_FIELDS = (
     "durable_image_id",
     "durable_content_type",
     "durable_byte_size",
+    "durable_original_byte_size",
     "start_date_display",
     "days_running",
 )
@@ -1706,7 +1797,12 @@ def build_seo_snapshot_ads(brand_name: str, ads):
         compact = {}
         for field in SEO_SNAPSHOT_AD_FIELDS:
             value = ad.get(field)
-            if field in {"days_running", "durable_image_id", "durable_byte_size"}:
+            if field in {
+                "days_running",
+                "durable_image_id",
+                "durable_byte_size",
+                "durable_original_byte_size",
+            }:
                 try:
                     compact[field] = int(value) if value is not None else None
                 except (TypeError, ValueError):
@@ -1848,7 +1944,7 @@ def select_seo_brand_saved_data(cached, snapshot, now=None):
         ),
         "external_images_only": bool(durable_image_count == 0 and external_image_count > 0),
         "needs_durable_images": bool(
-            missing_durable_image_count > 0
+            durable_image_count > 0 and missing_durable_image_count > 0
         ),
         "stale_but_usable": bool(
             data_source in ("stale_snapshot", "stale_cache")

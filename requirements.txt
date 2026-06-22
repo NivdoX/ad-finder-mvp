@@ -7,3 +7,4 @@ openai
 gunicorn
 resend
 sentry-sdk[flask]
+Pillow==12.2.0
