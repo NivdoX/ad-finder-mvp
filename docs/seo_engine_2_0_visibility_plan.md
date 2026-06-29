@@ -302,12 +302,40 @@ Add an internal tracker later for:
 ### Phase 4: Controlled autopilot
 
 - Use the admin-triggered maintenance executor as the first safe execution layer for published-page cache and image repair.
-- Add a CLI entry point such as `python app.py run-seo-engine-autopilot` or an equivalent command that reuses the same dry-run planner and safety gates.
+- Use the CLI entry point `python main.py run-seo-engine-maintenance` for published-page maintenance repair.
 - CLI dry run
 - Admin approval queue
 - Bounded autopilot maintenance
 - Publish only when quality gates pass
 - Kill switch and daily paid-API limits
+
+## Future Render Cron setup
+
+Command:
+
+```bash
+python main.py run-seo-engine-maintenance
+```
+
+Suggested initial schedule:
+
+- Daily or weekday off-peak.
+
+Suggested initial batch:
+
+- `SEO_MAINTENANCE_BATCH_SIZE=10`
+- 10 published SEO pages per run.
+
+Safety:
+
+- Published pages only.
+- No publish.
+- No promote.
+- No generate.
+- No delete.
+- No unpublish.
+- Uses the same hardened SEO Engine 2.0 maintenance executor as the admin repair action.
+- Exits cleanly with `partial_time_limit` if the runtime cap is reached.
 
 ### Phase 5: AI visibility
 

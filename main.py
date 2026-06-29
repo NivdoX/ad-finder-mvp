@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import socket
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urljoin, urlparse
@@ -123,6 +124,9 @@ SEO_ENGINE_2_RECENT_ACTIVITY_LIMIT = 12
 SEO_ENGINE_2_MAINTENANCE_DEFAULT_LIMIT = 3
 SEO_ENGINE_2_MAINTENANCE_MAX_LIMIT = 10
 SEO_ENGINE_2_MAINTENANCE_MAX_SECONDS = 22
+SEO_ENGINE_2_CLI_MAINTENANCE_DEFAULT_LIMIT = 10
+SEO_ENGINE_2_CLI_MAINTENANCE_MAX_LIMIT = 25
+SEO_ENGINE_2_CLI_MAINTENANCE_MAX_SECONDS = 240
 SEO_DURABLE_IMAGE_ABSOLUTE_MAX_BYTES = 1_000_000
 SEO_DURABLE_IMAGE_MAX_BYTES = min(
     SEO_DURABLE_IMAGE_ABSOLUTE_MAX_BYTES,
@@ -3107,12 +3111,16 @@ def build_seo_engine_2_dry_run(overview=None):
     }
 
 
-def normalize_seo_engine_2_maintenance_limit(value=None):
+def normalize_seo_engine_2_maintenance_limit(
+    value=None,
+    default_limit: int = SEO_ENGINE_2_MAINTENANCE_DEFAULT_LIMIT,
+    max_limit: int = SEO_ENGINE_2_MAINTENANCE_MAX_LIMIT,
+):
     try:
-        limit = int(value or SEO_ENGINE_2_MAINTENANCE_DEFAULT_LIMIT)
+        limit = int(value or default_limit)
     except (TypeError, ValueError):
-        limit = SEO_ENGINE_2_MAINTENANCE_DEFAULT_LIMIT
-    return max(1, min(limit, SEO_ENGINE_2_MAINTENANCE_MAX_LIMIT))
+        limit = default_limit
+    return max(1, min(limit, max_limit))
 
 
 def get_seo_engine_2_maintenance_limit_options():
@@ -3418,9 +3426,15 @@ def run_seo_engine_2_maintenance(
     overview_builder=None,
     log_activity: bool = True,
     max_seconds: int = SEO_ENGINE_2_MAINTENANCE_MAX_SECONDS,
+    default_limit: int = SEO_ENGINE_2_MAINTENANCE_DEFAULT_LIMIT,
+    max_limit: int = SEO_ENGINE_2_MAINTENANCE_MAX_LIMIT,
     monotonic_clock=None,
 ):
-    limit = normalize_seo_engine_2_maintenance_limit(max_brands)
+    limit = normalize_seo_engine_2_maintenance_limit(
+        max_brands,
+        default_limit=default_limit,
+        max_limit=max_limit,
+    )
     overview_builder = overview_builder or build_seo_engine_2_overview
     overview = overview or overview_builder()
     target_selection = build_seo_engine_2_maintenance_targets(overview, max_brands=limit)
@@ -3572,6 +3586,143 @@ def format_seo_engine_2_maintenance_summary(summary):
     if issue_count:
         message += f" Issues recorded: {issue_count}."
     return message
+
+
+def parse_seo_maintenance_cli_args(argv):
+    args = list(argv or [])
+    batch_size = os.getenv("SEO_MAINTENANCE_BATCH_SIZE", "").strip()
+    max_seconds = os.getenv("SEO_MAINTENANCE_MAX_SECONDS", "").strip()
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg in {"--batch-size", "--max-brands"}:
+            if index + 1 < len(args):
+                batch_size = args[index + 1]
+                index += 2
+                continue
+        elif arg.startswith("--batch-size="):
+            batch_size = arg.split("=", 1)[1]
+        elif arg.startswith("--max-brands="):
+            batch_size = arg.split("=", 1)[1]
+        elif arg == "--max-seconds":
+            if index + 1 < len(args):
+                max_seconds = args[index + 1]
+                index += 2
+                continue
+        elif arg.startswith("--max-seconds="):
+            max_seconds = arg.split("=", 1)[1]
+        elif arg in {"-h", "--help"}:
+            return {
+                "help": True,
+                "batch_size": SEO_ENGINE_2_CLI_MAINTENANCE_DEFAULT_LIMIT,
+                "max_seconds": SEO_ENGINE_2_CLI_MAINTENANCE_MAX_SECONDS,
+            }
+        index += 1
+
+    try:
+        parsed_seconds = int(max_seconds or SEO_ENGINE_2_CLI_MAINTENANCE_MAX_SECONDS)
+    except (TypeError, ValueError):
+        parsed_seconds = SEO_ENGINE_2_CLI_MAINTENANCE_MAX_SECONDS
+
+    return {
+        "help": False,
+        "batch_size": normalize_seo_engine_2_maintenance_limit(
+            batch_size,
+            default_limit=SEO_ENGINE_2_CLI_MAINTENANCE_DEFAULT_LIMIT,
+            max_limit=SEO_ENGINE_2_CLI_MAINTENANCE_MAX_LIMIT,
+        ),
+        "max_seconds": max(30, min(parsed_seconds, 300)),
+    }
+
+
+def print_seo_maintenance_cli_help():
+    print("Usage: python main.py run-seo-engine-maintenance [--batch-size N] [--max-seconds N]")
+    print("")
+    print("Runs SEO Engine 2.0 maintenance repair for published SEO brand pages only.")
+    print(f"Default batch size: {SEO_ENGINE_2_CLI_MAINTENANCE_DEFAULT_LIMIT}")
+    print(f"Maximum batch size: {SEO_ENGINE_2_CLI_MAINTENANCE_MAX_LIMIT}")
+    print(f"Default max runtime: {SEO_ENGINE_2_CLI_MAINTENANCE_MAX_SECONDS} seconds")
+    print("Environment overrides: SEO_MAINTENANCE_BATCH_SIZE, SEO_MAINTENANCE_MAX_SECONDS")
+
+
+def print_seo_maintenance_cli_summary(summary):
+    lines = [
+        ("started_at", summary.get("started_at")),
+        ("finished_at", summary.get("finished_at")),
+        ("status", summary.get("status")),
+        ("published_pages_checked", summary.get("brands_checked")),
+        ("brands_selected", summary.get("brands_selected")),
+        ("brands_processed", summary.get("brands_processed")),
+        ("brands_repaired", summary.get("brands_repaired")),
+        ("cache_refresh_attempted", summary.get("cache_refresh_attempted")),
+        ("image_refresh_attempted", summary.get("image_refresh_attempted")),
+        ("durable_image_preservation_attempted", summary.get("durable_image_attempted")),
+        ("durable_images_saved_or_reused", summary.get("durable_images_preserved")),
+        ("brands_skipped", summary.get("brands_skipped")),
+        ("brand_errors", len(summary.get("brand_errors") or [])),
+        ("route_global_errors", len(summary.get("route_errors") or [])),
+        ("stopped_early", summary.get("stopped_early")),
+        ("stopped_reason", summary.get("stopped_reason") or ""),
+        ("remaining_published_pages_missing_images", summary.get("remaining_missing_images")),
+        ("remaining_stale_failed_cache_pages", summary.get("remaining_stale_failed_cache")),
+    ]
+    print("SEO Engine 2.0 maintenance summary")
+    print("----------------------------------")
+    for label, value in lines:
+        print(f"{label}: {value}")
+
+    if summary.get("skipped"):
+        print("")
+        print("Skipped brands:")
+        for row in summary["skipped"][:20]:
+            print(f"- {row.get('brand_name')} ({row.get('brand_slug') or '-'}) - {row.get('reason')}")
+
+    if summary.get("brand_errors"):
+        print("")
+        print("Brand errors:")
+        for error in summary["brand_errors"][:20]:
+            print(
+                f"- {error.get('brand_name')} ({error.get('brand_slug') or '-'}) "
+                f"{error.get('action')}: {error.get('error')} "
+                f"Recommendation: {error.get('recommendation')}"
+            )
+
+    if summary.get("route_errors"):
+        print("")
+        print("Route/global errors:")
+        for error in summary["route_errors"][:20]:
+            print(f"- {error}")
+
+
+def get_seo_maintenance_cli_exit_code(summary):
+    status = summary.get("status")
+    if status in {"completed", "completed_with_errors", "partial_time_limit"}:
+        return 0
+    if int(summary.get("eligible_count") or 0) == 0:
+        return 0
+    return 1
+
+
+def run_seo_engine_maintenance_cli(argv=None, executor=None):
+    options = parse_seo_maintenance_cli_args(argv)
+    if options["help"]:
+        print_seo_maintenance_cli_help()
+        return 0
+
+    executor = executor or run_seo_engine_2_maintenance
+    try:
+        summary = executor(
+            max_brands=options["batch_size"],
+            max_seconds=options["max_seconds"],
+            default_limit=SEO_ENGINE_2_CLI_MAINTENANCE_DEFAULT_LIMIT,
+            max_limit=SEO_ENGINE_2_CLI_MAINTENANCE_MAX_LIMIT,
+        )
+    except Exception as exc:
+        print(f"SEO maintenance CLI failed before a summary could be produced: {str(exc)}")
+        return 1
+
+    print_seo_maintenance_cli_summary(summary)
+    return get_seo_maintenance_cli_exit_code(summary)
 
 
 def slugify_brand_name(value: str) -> str:
@@ -8123,6 +8274,9 @@ def sitemap_xml():
     return "\n".join(xml), 200, {"Content-Type": "application/xml"}
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "run-seo-engine-maintenance":
+        raise SystemExit(run_seo_engine_maintenance_cli(sys.argv[2:]))
+
     port = int(os.environ.get("PORT", 3000))
     app.run(host="0.0.0.0", port=port)
 
