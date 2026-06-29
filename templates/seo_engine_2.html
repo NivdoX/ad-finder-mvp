@@ -34,6 +34,10 @@
             Runs a limited maintenance batch for already published SEO brand pages only. It prioritizes
             pages missing images, stale or failed cache, external image preservation, and old previews.
         </p>
+        <p class="muted">
+            Start with 3 brands. Larger batches may take longer because image/cache repair can call
+            existing refresh logic.
+        </p>
         <p class="danger-note">
             This does not publish new pages, promote candidates, generate candidates, delete records,
             unpublish pages, or change public product flows. It may call the existing SEO cache/image
@@ -127,8 +131,14 @@
         <div class="pill">Maintenance result</div>
         <h2>Repair summary</h2>
         <p class="muted">
-            Started {{ maintenance_summary.started_at }} and finished {{ maintenance_summary.finished_at }}.
+            Status: {{ maintenance_summary.status }}. Started {{ maintenance_summary.started_at }}
+            and finished {{ maintenance_summary.finished_at }}.
         </p>
+        {% if maintenance_summary.stopped_early %}
+            <p class="danger-note">
+                Stopped early: {{ maintenance_summary.stopped_reason or 'time limit reached' }}.
+            </p>
+        {% endif %}
     </div>
 </div>
 
@@ -144,6 +154,11 @@
         <p class="muted">This run</p>
     </div>
     <div class="panel">
+        <div class="pill">Processed</div>
+        <h3>{{ maintenance_summary.brands_processed }}</h3>
+        <p class="muted">Before stop/errors</p>
+    </div>
+    <div class="panel">
         <div class="pill">Repaired</div>
         <h3>{{ maintenance_summary.brands_repaired }}</h3>
         <p class="muted">Updated or preserved</p>
@@ -153,18 +168,23 @@
         <h3>{{ maintenance_summary.cache_refresh_attempted }}</h3>
         <p class="muted">Refresh attempts</p>
     </div>
-    <div class="panel">
-        <div class="pill">Durable</div>
-        <h3>{{ maintenance_summary.durable_images_preserved }}</h3>
-        <p class="muted">Images saved/reused</p>
-    </div>
 </div>
 
-<div class="simple-grid three-col">
+<div class="simple-grid five-col">
     <div class="panel">
         <div class="pill">Images</div>
         <h3>{{ maintenance_summary.image_refresh_attempted }}</h3>
         <p class="muted">Image repair refresh attempts</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Durable</div>
+        <h3>{{ maintenance_summary.durable_image_attempted }}</h3>
+        <p class="muted">Preservation attempts</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Saved</div>
+        <h3>{{ maintenance_summary.durable_images_preserved }}</h3>
+        <p class="muted">Durable saved/reused</p>
     </div>
     <div class="panel">
         <div class="pill">Remaining</div>
@@ -178,7 +198,7 @@
     </div>
 </div>
 
-{% if maintenance_summary.skipped or maintenance_summary.errors %}
+{% if maintenance_summary.skipped or maintenance_summary.brand_errors or maintenance_summary.route_errors %}
 <div class="simple-grid two-col">
     <div class="panel">
         <h2>Skipped brands</h2>
@@ -205,15 +225,45 @@
     </div>
 
     <div class="panel">
-        <h2>Errors</h2>
-        {% if maintenance_summary.errors %}
+        <h2>Brand errors</h2>
+        {% if maintenance_summary.brand_errors %}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Brand</th>
+                        <th>Action</th>
+                        <th>Error</th>
+                        <th>Next recommendation</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for error in maintenance_summary.brand_errors[:10] %}
+                        <tr>
+                            <td>{{ error.brand_name }}</td>
+                            <td>{{ error.action }}</td>
+                            <td><span class="danger-note">{{ error.error|truncate(120, True) }}</span></td>
+                            <td>{{ error.recommendation }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p class="muted">No brand-level errors reported.</p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{% if maintenance_summary.route_errors %}
+<div class="simple-grid">
+    <div class="panel">
+        <h2>Route errors</h2>
+        {% if maintenance_summary.route_errors %}
             <ul>
-                {% for error in maintenance_summary.errors[:10] %}
+                {% for error in maintenance_summary.route_errors[:10] %}
                     <li class="danger-note">{{ error }}</li>
                 {% endfor %}
             </ul>
-        {% else %}
-            <p class="muted">No errors reported.</p>
         {% endif %}
     </div>
 </div>
