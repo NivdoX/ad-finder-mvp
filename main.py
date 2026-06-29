@@ -120,6 +120,8 @@ SEO_REFRESH_ADVISORY_LOCK_ID = 73190422
 APIFY_USAGE_LIMIT_MESSAGE = "Apify usage limit reached. No further refreshes were attempted."
 SEO_ENGINE_2_DRY_RUN_LIMIT = 25
 SEO_ENGINE_2_RECENT_ACTIVITY_LIMIT = 12
+SEO_ENGINE_2_MAINTENANCE_DEFAULT_LIMIT = 10
+SEO_ENGINE_2_MAINTENANCE_MAX_LIMIT = 25
 SEO_DURABLE_IMAGE_ABSOLUTE_MAX_BYTES = 1_000_000
 SEO_DURABLE_IMAGE_MAX_BYTES = min(
     SEO_DURABLE_IMAGE_ABSOLUTE_MAX_BYTES,
@@ -3058,6 +3060,324 @@ def build_seo_engine_2_dry_run(overview=None):
             "No Apify, OpenAI, Stripe, or external paid API calls were made.",
         ],
     }
+
+
+def normalize_seo_engine_2_maintenance_limit(value=None):
+    try:
+        limit = int(value or SEO_ENGINE_2_MAINTENANCE_DEFAULT_LIMIT)
+    except (TypeError, ValueError):
+        limit = SEO_ENGINE_2_MAINTENANCE_DEFAULT_LIMIT
+    return max(1, min(limit, SEO_ENGINE_2_MAINTENANCE_MAX_LIMIT))
+
+
+def get_seo_engine_2_maintenance_limit_options():
+    return [5, 10, 15, 25]
+
+
+def get_seo_engine_2_maintenance_skip_reason(row):
+    brand = row.get("brand") or {}
+    candidate = row.get("candidate") or {}
+    gates = row.get("quality_gates") or {}
+    slug = (brand.get("slug") or "").strip().lower()
+
+    if not slug:
+        return "Missing brand slug"
+    if not brand.get("name"):
+        return "Missing brand name"
+    if brand.get("is_published") is False:
+        return "Brand is not published"
+    if candidate.get("status") == "failed" or candidate.get("quality_status") in {"failed", "rejected"}:
+        return "Linked candidate is failed or rejected"
+    if any(
+        blocker in set(gates.get("blocked") or [])
+        for blocker in {
+            "Missing brand name",
+            "Slug is missing or unclear",
+            "Missing commercial category or focus",
+            "Generic or incomplete page text",
+        }
+    ):
+        return "Critical metadata problem"
+    return ""
+
+
+def get_seo_engine_2_maintenance_reason(row):
+    page_state = row.get("page_state") or {}
+    if page_state.get("needs_images"):
+        return "missing_images", "Published page is missing one or more ad images"
+    if row.get("cache_failed") or row.get("refresh_needed"):
+        return "cache_repair", "Published page has failed, stale, empty, non-US, or expired cache"
+    if page_state.get("external_images_only") or page_state.get("needs_durable_images"):
+        return "durable_image_preservation", "Published page has external or missing durable image storage"
+    if page_state.get("stale_but_usable"):
+        return "old_preview_refresh", "Published page uses old but usable previews"
+    return "", ""
+
+
+def build_seo_engine_2_maintenance_targets(overview, max_brands=None):
+    max_brands = normalize_seo_engine_2_maintenance_limit(max_brands)
+    priority = {
+        "missing_images": 1,
+        "cache_repair": 2,
+        "durable_image_preservation": 3,
+        "old_preview_refresh": 4,
+    }
+    skipped = []
+    eligible = []
+    published_pages = overview.get("published_pages") or []
+
+    for row in published_pages:
+        brand = row.get("brand") or {}
+        skip_reason = get_seo_engine_2_maintenance_skip_reason(row)
+        if skip_reason:
+            skipped.append(
+                {
+                    "brand_name": brand.get("name") or "Unknown brand",
+                    "brand_slug": brand.get("slug") or "",
+                    "reason": skip_reason,
+                }
+            )
+            continue
+
+        reason_key, reason_label = get_seo_engine_2_maintenance_reason(row)
+        if not reason_key:
+            continue
+
+        eligible.append(
+            {
+                "brand": brand,
+                "cache": row.get("cache") or {},
+                "snapshot": row.get("snapshot") or {},
+                "page_state": row.get("page_state") or {},
+                "reason_key": reason_key,
+                "reason": reason_label,
+                "priority": priority.get(reason_key, 99),
+            }
+        )
+
+    eligible.sort(
+        key=lambda item: (
+            item["priority"],
+            item["cache"].get("updated_at") or datetime.min.replace(tzinfo=timezone.utc),
+            item["brand"].get("name") or "",
+        )
+    )
+    selected = eligible[:max_brands]
+    return {
+        "brands_checked": len(published_pages),
+        "eligible_count": len(eligible),
+        "targets": selected,
+        "skipped": skipped,
+        "limit": max_brands,
+    }
+
+
+def build_seo_engine_2_refresh_target_data(target_selection):
+    refresh_targets = [
+        {
+            "brand": target["brand"],
+            "cache": target.get("cache") or {},
+        }
+        for target in target_selection["targets"]
+        if target["reason_key"] in {"missing_images", "cache_repair", "old_preview_refresh"}
+    ]
+    return {
+        "brands_checked": target_selection["brands_checked"],
+        "eligible_count": len(refresh_targets),
+        "estimated_brands_selected": len(refresh_targets),
+        "targets": refresh_targets,
+        "limit": target_selection["limit"],
+    }
+
+
+def preserve_durable_images_for_seo_engine_targets(target_selection):
+    durable_targets = [
+        target
+        for target in target_selection["targets"]
+        if target["reason_key"] == "durable_image_preservation"
+    ]
+    summary = {
+        "brands_checked": target_selection["brands_checked"],
+        "eligible_count": len(durable_targets),
+        "brands_attempted": 0,
+        "brands_updated": 0,
+        "images_attempted": 0,
+        "images_saved": 0,
+        "images_reused": 0,
+        "images_failed": 0,
+        "errors": [],
+        "limit": target_selection["limit"],
+    }
+
+    for target in durable_targets:
+        brand = target["brand"]
+        ads = (target.get("page_state") or {}).get("ads") or []
+        if not ads:
+            summary["errors"].append(f"{brand['name']}: no saved ads available for durable image preservation")
+            continue
+        summary["brands_attempted"] += 1
+        try:
+            preserved_ads, result = preserve_durable_images_for_ads(brand["slug"], ads)
+            summary["images_attempted"] += result["attempted"]
+            summary["images_saved"] += result["saved"]
+            summary["images_reused"] += result["reused"]
+            summary["images_failed"] += result["failed"]
+            summary["errors"].extend(result["errors"])
+            if result["saved"] or result["reused"]:
+                if update_snapshot_durable_image_references(brand["slug"], preserved_ads):
+                    summary["brands_updated"] += 1
+        except Exception as exc:
+            summary["images_failed"] += 1
+            summary["errors"].append(f"{brand['name']}: {str(exc)}")
+
+    return summary
+
+
+def run_seo_engine_2_maintenance(
+    max_brands=None,
+    overview=None,
+    refresh_executor=None,
+    durable_executor=None,
+    overview_builder=None,
+    log_activity: bool = True,
+):
+    limit = normalize_seo_engine_2_maintenance_limit(max_brands)
+    overview_builder = overview_builder or build_seo_engine_2_overview
+    overview = overview or overview_builder()
+    target_selection = build_seo_engine_2_maintenance_targets(overview, max_brands=limit)
+    refresh_executor = refresh_executor or refresh_seo_brand_cache_targets
+    durable_executor = durable_executor or preserve_durable_images_for_seo_engine_targets
+    run_id = create_seo_automation_run("seo_engine_2_maintenance") if log_activity else None
+    summary = {
+        "started_at": utcnow(),
+        "finished_at": None,
+        "limit": limit,
+        "brands_checked": target_selection["brands_checked"],
+        "eligible_count": target_selection["eligible_count"],
+        "brands_selected": len(target_selection["targets"]),
+        "brands_repaired": 0,
+        "cache_refresh_attempted": 0,
+        "image_refresh_attempted": 0,
+        "durable_image_attempted": 0,
+        "durable_images_preserved": 0,
+        "brands_skipped": len(target_selection["skipped"]),
+        "skipped": target_selection["skipped"],
+        "errors": [],
+        "apify_runs": 0,
+        "remaining_missing_images": 0,
+        "remaining_stale_failed_cache": 0,
+        "cache_summary": {},
+        "durable_summary": {},
+        "status": "completed",
+    }
+
+    try:
+        refresh_target_data = build_seo_engine_2_refresh_target_data(target_selection)
+        if refresh_target_data["targets"]:
+            refresh_summary = refresh_executor(
+                refresh_target_data,
+                run_type="seo_engine_2_maintenance_cache_refresh",
+            )
+        else:
+            refresh_summary = {
+                "brands_attempted": 0,
+                "brands_updated_with_previews": 0,
+                "brands_preserved": 0,
+                "brands_failed": 0,
+                "timeouts": 0,
+                "apify_runs": 0,
+                "errors": [],
+                "blocked_reason": "",
+            }
+        summary["cache_summary"] = refresh_summary
+        summary["cache_refresh_attempted"] = int(refresh_summary.get("brands_attempted") or 0)
+        selected_missing_image_targets = sum(
+            1 for target in refresh_target_data["targets"]
+            if target.get("brand", {}).get("slug") in {
+                selected["brand"]["slug"]
+                for selected in target_selection["targets"]
+                if selected["reason_key"] == "missing_images"
+            }
+        )
+        summary["image_refresh_attempted"] = min(
+            selected_missing_image_targets,
+            summary["cache_refresh_attempted"],
+        )
+        summary["apify_runs"] = int(refresh_summary.get("apify_runs") or 0)
+        summary["errors"].extend(refresh_summary.get("errors") or [])
+        if refresh_summary.get("blocked_reason"):
+            summary["errors"].append(refresh_summary["blocked_reason"])
+
+        durable_summary = durable_executor(target_selection)
+        summary["durable_summary"] = durable_summary
+        summary["durable_image_attempted"] = int(durable_summary.get("images_attempted") or 0)
+        summary["durable_images_preserved"] = int(durable_summary.get("images_saved") or 0) + int(
+            durable_summary.get("images_reused") or 0
+        )
+        summary["errors"].extend(durable_summary.get("errors") or [])
+        summary["brands_repaired"] = (
+            int(refresh_summary.get("brands_updated_with_previews") or 0)
+            + int(refresh_summary.get("brands_preserved") or 0)
+            + int(durable_summary.get("brands_updated") or 0)
+        )
+
+        refreshed_overview = overview_builder()
+        refreshed_summary = refreshed_overview.get("summary") or {}
+        summary["remaining_missing_images"] = int(refreshed_summary.get("published_missing_images") or 0)
+        summary["remaining_stale_failed_cache"] = int(refreshed_summary.get("published_stale_failed_cache") or 0)
+        if summary["errors"]:
+            summary["status"] = "completed_with_errors"
+    except Exception as exc:
+        summary["status"] = "completed_with_errors"
+        summary["errors"].append(str(exc))
+    finally:
+        summary["finished_at"] = utcnow()
+        if run_id:
+            error_message = ""
+            if summary["errors"]:
+                error_message = json.dumps(
+                    {
+                        "errors": summary["errors"][:5],
+                        "remaining_missing_images": summary["remaining_missing_images"],
+                        "remaining_stale_failed_cache": summary["remaining_stale_failed_cache"],
+                    }
+                )
+            finish_seo_automation_run(
+                run_id,
+                summary["status"],
+                {
+                    "tested": 0,
+                    "auto_published": 0,
+                    "sent_to_review": 0,
+                    "rejected": 0,
+                    "failed": 1 if summary["status"] == "completed_with_errors" else 0,
+                    "apify_runs": summary["apify_runs"],
+                    "brands_attempted": summary["cache_refresh_attempted"] + int(
+                        (summary.get("durable_summary") or {}).get("brands_attempted") or 0
+                    ),
+                },
+                error=error_message,
+            )
+    return summary
+
+
+def format_seo_engine_2_maintenance_summary(summary):
+    message = (
+        f"SEO maintenance repair complete. Checked {summary['brands_checked']} published page(s), "
+        f"selected {summary['brands_selected']} of {summary['eligible_count']} eligible, "
+        f"repaired or preserved {summary['brands_repaired']}, "
+        f"cache refresh attempted {summary['cache_refresh_attempted']}, "
+        f"image refresh attempted {summary['image_refresh_attempted']}, "
+        f"durable images preserved {summary['durable_images_preserved']}, "
+        f"skipped {summary['brands_skipped']}. "
+        f"Remaining missing images: {summary['remaining_missing_images']}. "
+        f"Remaining stale/failed cache: {summary['remaining_stale_failed_cache']}."
+    )
+    if summary["errors"]:
+        message += f" Errors: {'; '.join(summary['errors'][:3])}"
+        if len(summary["errors"]) > 3:
+            message += f"; plus {len(summary['errors']) - 3} more."
+    return message
 
 
 def slugify_brand_name(value: str) -> str:
@@ -6134,14 +6454,27 @@ def seo_market_audit():
 def seo_engine_2_admin():
     overview = build_seo_engine_2_overview()
     dry_run_plan = None
+    maintenance_summary = None
     if request.method == "POST":
-        dry_run_plan = build_seo_engine_2_dry_run(overview)
-        flash("SEO Engine 2.0 dry run complete. No records were changed and no paid APIs were called.")
+        action = (request.form.get("action") or "dry_run").strip()
+        if action == "maintenance_repair":
+            maintenance_summary = run_seo_engine_2_maintenance(
+                max_brands=request.form.get("max_brands"),
+                overview=overview,
+            )
+            flash(format_seo_engine_2_maintenance_summary(maintenance_summary))
+            overview = build_seo_engine_2_overview()
+        else:
+            dry_run_plan = build_seo_engine_2_dry_run(overview)
+            flash("SEO Engine 2.0 dry run complete. No records were changed and no paid APIs were called.")
 
     return render_template(
         "seo_engine_2.html",
         overview=overview,
         dry_run_plan=dry_run_plan,
+        maintenance_summary=maintenance_summary,
+        maintenance_limit_options=get_seo_engine_2_maintenance_limit_options(),
+        default_maintenance_limit=SEO_ENGINE_2_MAINTENANCE_DEFAULT_LIMIT,
     )
 
 

@@ -19,8 +19,48 @@
             <a class="topbar-btn" href="{{ url_for('admin') }}">Back to admin</a>
         </p>
         <form method="post">
+            <input type="hidden" name="action" value="dry_run">
             <button class="form-button" type="submit">Run SEO Engine 2.0 dry run</button>
             <p class="muted">No Apify, OpenAI, publishing, refresh, delete, or cache writes.</p>
+        </form>
+    </div>
+</div>
+
+<div class="simple-grid">
+    <div class="panel">
+        <div class="pill">Maintenance repair</div>
+        <h2>Repair existing published SEO pages</h2>
+        <p class="muted">
+            Runs a limited maintenance batch for already published SEO brand pages only. It prioritizes
+            pages missing images, stale or failed cache, external image preservation, and old previews.
+        </p>
+        <p class="danger-note">
+            This does not publish new pages, promote candidates, generate candidates, delete records,
+            unpublish pages, or change public product flows. It may call the existing SEO cache/image
+            refresh logic.
+        </p>
+        <form method="post" class="stack" style="max-width:360px;">
+            <input type="hidden" name="action" value="maintenance_repair">
+            <label>
+                <span class="field-label">Maximum published brands to select</span>
+                <select class="form-input" name="max_brands">
+                    {% for option in maintenance_limit_options %}
+                        <option value="{{ option }}" {% if option == default_maintenance_limit %}selected{% endif %}>
+                            {{ option }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </label>
+            <button
+                class="form-button"
+                type="submit"
+                onclick="return confirm('Run a bounded maintenance repair for published SEO pages only? This may call existing cache/image refresh logic but will not publish or delete pages.');"
+            >
+                Run SEO maintenance repair
+            </button>
+            <p class="muted">
+                Existing Apify refresh safety limits still apply, so fewer brands may be refreshed than selected.
+            </p>
         </form>
     </div>
 </div>
@@ -80,6 +120,105 @@
         <p class="muted">Ready candidates</p>
     </div>
 </div>
+
+{% if maintenance_summary %}
+<div class="simple-grid">
+    <div class="panel">
+        <div class="pill">Maintenance result</div>
+        <h2>Repair summary</h2>
+        <p class="muted">
+            Started {{ maintenance_summary.started_at }} and finished {{ maintenance_summary.finished_at }}.
+        </p>
+    </div>
+</div>
+
+<div class="simple-grid five-col">
+    <div class="panel">
+        <div class="pill">Checked</div>
+        <h3>{{ maintenance_summary.brands_checked }}</h3>
+        <p class="muted">Published pages</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Selected</div>
+        <h3>{{ maintenance_summary.brands_selected }}</h3>
+        <p class="muted">This run</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Repaired</div>
+        <h3>{{ maintenance_summary.brands_repaired }}</h3>
+        <p class="muted">Updated or preserved</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Cache</div>
+        <h3>{{ maintenance_summary.cache_refresh_attempted }}</h3>
+        <p class="muted">Refresh attempts</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Durable</div>
+        <h3>{{ maintenance_summary.durable_images_preserved }}</h3>
+        <p class="muted">Images saved/reused</p>
+    </div>
+</div>
+
+<div class="simple-grid three-col">
+    <div class="panel">
+        <div class="pill">Images</div>
+        <h3>{{ maintenance_summary.image_refresh_attempted }}</h3>
+        <p class="muted">Image repair refresh attempts</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Remaining</div>
+        <h3>{{ maintenance_summary.remaining_missing_images }}</h3>
+        <p class="muted">Published pages missing images</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Remaining</div>
+        <h3>{{ maintenance_summary.remaining_stale_failed_cache }}</h3>
+        <p class="muted">Stale or failed cache pages</p>
+    </div>
+</div>
+
+{% if maintenance_summary.skipped or maintenance_summary.errors %}
+<div class="simple-grid two-col">
+    <div class="panel">
+        <h2>Skipped brands</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Slug</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in maintenance_summary.skipped[:20] %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.brand_slug or '-' }}</td>
+                        <td>{{ row.reason }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="3"><span class="muted">No brands skipped by safety gates.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Errors</h2>
+        {% if maintenance_summary.errors %}
+            <ul>
+                {% for error in maintenance_summary.errors[:10] %}
+                    <li class="danger-note">{{ error }}</li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="muted">No errors reported.</p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endif %}
 
 {% if dry_run_plan %}
 <div class="simple-grid">

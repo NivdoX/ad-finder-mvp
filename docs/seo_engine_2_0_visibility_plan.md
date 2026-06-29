@@ -301,6 +301,7 @@ Add an internal tracker later for:
 
 ### Phase 4: Controlled autopilot
 
+- Use the admin-triggered maintenance executor as the first safe execution layer for published-page cache and image repair.
 - Add a CLI entry point such as `python app.py run-seo-engine-autopilot` or an equivalent command that reuses the same dry-run planner and safety gates.
 - CLI dry run
 - Admin approval queue
