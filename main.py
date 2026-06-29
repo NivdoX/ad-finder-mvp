@@ -118,6 +118,8 @@ SEO_STALE_CACHE_REFRESH_LIMIT = SEO_REFRESH_MAX_BRANDS_PER_CLICK
 SEO_REFRESH_RUN_TYPE_PATTERN = "seo_cache_refresh_%"
 SEO_REFRESH_ADVISORY_LOCK_ID = 73190422
 APIFY_USAGE_LIMIT_MESSAGE = "Apify usage limit reached. No further refreshes were attempted."
+SEO_ENGINE_2_DRY_RUN_LIMIT = 25
+SEO_ENGINE_2_RECENT_ACTIVITY_LIMIT = 12
 SEO_DURABLE_IMAGE_ABSOLUTE_MAX_BYTES = 1_000_000
 SEO_DURABLE_IMAGE_MAX_BYTES = min(
     SEO_DURABLE_IMAGE_ABSOLUTE_MAX_BYTES,
@@ -2630,6 +2632,431 @@ def get_seo_market_audit_report():
         "published_without_candidate": published_without_candidate,
         "published_empty_cache": published_empty_cache,
         "pre_us_cache_rows": pre_us_cache_rows,
+    }
+
+
+def get_seo_engine_2_pipeline_map():
+    """Human-readable map of the existing SEO engine for future admin/autopilot work."""
+    return [
+        {
+            "step": "Discover",
+            "routes": "/admin/seo-candidate-generator",
+            "functions": "seo_candidate_generator, insert_seed_seo_brand_candidates",
+            "templates": "templates/seo_candidate_generator.html",
+        },
+        {
+            "step": "Qualify",
+            "routes": "/admin/seo-brand-candidates, /admin/seo-brand-candidates/process-next",
+            "functions": "test_seo_brand_candidate, process_one_seo_automation_candidate",
+            "templates": "templates/seo_brand_candidates.html",
+        },
+        {
+            "step": "Promote",
+            "routes": "/admin/seo-brand-candidates/<id>/promote, /admin/seo-brand-candidates/bulk-promote",
+            "functions": "promote_seo_brand_candidate, promote_seo_brand_candidate_route",
+            "templates": "templates/seo_brand_candidates.html",
+        },
+        {
+            "step": "Build",
+            "routes": "/brand/<brand_slug>",
+            "functions": "get_brand_by_slug, get_cached_seo_brand_ads, get_related_brands",
+            "templates": "templates/brand.html",
+        },
+        {
+            "step": "Validate",
+            "routes": "/admin/seo-engine-2, /admin/seo-market-audit",
+            "functions": "build_seo_engine_2_dry_run, get_seo_market_audit_report",
+            "templates": "templates/seo_engine_2.html, templates/seo_market_audit.html",
+        },
+        {
+            "step": "Publish",
+            "routes": "/brand/<brand_slug>, /sitemap.xml",
+            "functions": "get_published_seo_brands, sitemap_xml",
+            "templates": "templates/brand.html",
+        },
+        {
+            "step": "Maintain",
+            "routes": "/admin/seo-brand-cache",
+            "functions": "refresh_published_seo_brand_ads_cache, preserve_missing_durable_seo_images",
+            "templates": "templates/seo_brand_cache_admin.html",
+        },
+    ]
+
+
+def parse_quality_signals(value):
+    if isinstance(value, dict):
+        return value
+    try:
+        signals = json.loads(value or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return signals if isinstance(signals, dict) else {}
+
+
+def has_meaningful_brand_text(brand):
+    text_fields = [
+        brand.get("summary"),
+        brand.get("focus"),
+        brand.get("audience"),
+        brand.get("creative_angle"),
+        brand.get("market_context"),
+        brand.get("meta_description"),
+    ]
+    useful_fields = [
+        field
+        for field in text_fields
+        if isinstance(field, str) and len(field.strip()) >= 24
+    ]
+    return len(useful_fields) >= 4
+
+
+def evaluate_seo_brand_quality_gates(brand, cached=None, snapshot=None, candidate=None, published_count: int = 0):
+    cached = cached or {}
+    snapshot = snapshot or {}
+    candidate = candidate or {}
+    now = utcnow()
+    page_state = select_seo_brand_saved_data(cached, snapshot, now)
+    slug = (brand.get("slug") or brand.get("brand_slug") or "").strip().lower()
+    expected_slug = slugify_brand_name(brand.get("name") or brand.get("brand_name") or slug)
+    candidate_preview_count = int(candidate.get("preview_count") or 0)
+    quality_signals = parse_quality_signals(candidate.get("quality_signals_json"))
+    candidate_image_count = int(quality_signals.get("image_count") or 0)
+    candidate_brand_match = (quality_signals.get("brand_match") or "").lower()
+
+    passed = []
+    blocked = []
+
+    def check(condition, pass_label, block_label):
+        if condition:
+            passed.append(pass_label)
+        else:
+            blocked.append(block_label)
+
+    check(bool(brand.get("name") or brand.get("brand_name")), "Brand name exists", "Missing brand name")
+    check(bool(slug and slug == expected_slug), "Clean slug", "Slug is missing or unclear")
+    check(
+        bool((brand.get("category") or "").strip() and (brand.get("focus") or "").strip()),
+        "Commercial context exists",
+        "Missing commercial category or focus",
+    )
+    check(
+        bool(page_state["preview_count"] > 0 or candidate_preview_count > 0),
+        "Ad preview signal exists",
+        "No existing ad previews or candidate preview potential",
+    )
+    check(has_meaningful_brand_text(brand), "Template text is populated", "Generic or incomplete page text")
+    check(
+        bool(page_state["usable_image_count"] > 0 or candidate_image_count > 0),
+        "Image signal exists",
+        "No usable ad/product image signal",
+    )
+    check(
+        not bool(cached.get("refresh_status") == "failed" and page_state["preview_count"] == 0),
+        "No critical cache failure",
+        "Critical cache failure with no saved previews",
+    )
+    check(True, "Clear CTA present in brand template", "Missing CTA")
+    check(published_count > 1, "Internal links available", "No related brand links available yet")
+
+    if candidate and candidate_brand_match:
+        check(
+            candidate_brand_match in {"likely", "strong"},
+            f"Brand match is {candidate_brand_match}",
+            f"Brand match is {candidate_brand_match}",
+        )
+
+    return {
+        "seo_ready": not blocked,
+        "passed": passed,
+        "blocked": blocked,
+        "page_state": page_state,
+    }
+
+
+def evaluate_seo_candidate_promotion_gates(candidate):
+    signals = parse_quality_signals(candidate.get("quality_signals_json"))
+    image_count = int(signals.get("image_count") or 0)
+    brand_match = (signals.get("brand_match") or "").lower()
+    score = int(candidate.get("quality_score") or 0)
+    preview_count = int(candidate.get("preview_count") or 0)
+    blocked = []
+
+    if not candidate.get("is_qualified"):
+        blocked.append("Candidate is not qualified")
+    if candidate.get("published_brand_id"):
+        blocked.append("Already published")
+    if candidate.get("status") == "archived":
+        blocked.append("Candidate is archived")
+    if candidate.get("quality_status") in {"rejected", "failed", "inconclusive", "untested"}:
+        blocked.append(f"Quality status is {get_quality_status_label(candidate.get('quality_status'))}")
+    if preview_count <= 0:
+        blocked.append("No preview ads found")
+    if score < 70:
+        blocked.append("Quality score is below 70")
+    if image_count <= 0:
+        blocked.append("No image signal from candidate test")
+    if brand_match and brand_match not in {"likely", "strong"}:
+        blocked.append(f"Brand match is {brand_match}")
+
+    return {
+        "ready": not blocked,
+        "blocked": blocked,
+        "signals": signals,
+    }
+
+
+def get_recent_seo_engine_activity(limit: int = SEO_ENGINE_2_RECENT_ACTIVITY_LIMIT):
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT run_type, status, started_at, finished_at,
+                           candidates_tested, auto_published, sent_to_review,
+                           rejected, failed, apify_runs, brands_attempted,
+                           platform_limit_reached, error
+                    FROM seo_automation_runs
+                    ORDER BY started_at DESC
+                    LIMIT %s
+                    """,
+                    (limit,),
+                )
+                rows = []
+                for row in cur.fetchall():
+                    rows.append(
+                        {
+                            "run_type": row[0],
+                            "status": row[1],
+                            "started_at": row[2],
+                            "finished_at": row[3],
+                            "candidates_tested": int(row[4] or 0),
+                            "auto_published": int(row[5] or 0),
+                            "sent_to_review": int(row[6] or 0),
+                            "rejected": int(row[7] or 0),
+                            "failed": int(row[8] or 0),
+                            "apify_runs": int(row[9] or 0),
+                            "brands_attempted": int(row[10] or 0),
+                            "platform_limit_reached": bool(row[11]),
+                            "error": row[12],
+                        }
+                    )
+                return rows
+    finally:
+        conn.close()
+
+
+def build_seo_engine_2_overview():
+    candidates = get_seo_brand_candidate_rows(sort_key="alpha", view_key="all")
+    published_brands = get_published_seo_brands()
+    cache_by_slug = get_seo_brand_cache_by_slug()
+    snapshots_by_slug = get_seo_brand_snapshot_by_slug()
+    published_count = len(published_brands)
+    now = utcnow()
+
+    published_page_rows = []
+    summary = {
+        "total_candidates": len(candidates),
+        "qualified_candidates": 0,
+        "manual_review_candidates": 0,
+        "rejected_candidates": 0,
+        "published_brands": published_count,
+        "published_with_images": 0,
+        "published_missing_images": 0,
+        "published_stale_failed_cache": 0,
+        "published_needing_refresh": 0,
+        "candidates_ready_for_promotion": 0,
+        "candidates_blocked_from_promotion": 0,
+    }
+
+    candidates_by_slug = {candidate["brand_slug"]: candidate for candidate in candidates}
+    candidate_rows = []
+    for candidate in candidates:
+        if candidate.get("status") == "archived":
+            continue
+        if candidate.get("is_qualified"):
+            summary["qualified_candidates"] += 1
+        if candidate.get("quality_status") == "needs_review" and not candidate.get("published_brand_id"):
+            summary["manual_review_candidates"] += 1
+        if candidate.get("quality_status") in {"rejected", "failed"}:
+            summary["rejected_candidates"] += 1
+
+        gates = evaluate_seo_candidate_promotion_gates(candidate)
+        if gates["ready"]:
+            summary["candidates_ready_for_promotion"] += 1
+        elif not candidate.get("published_brand_id"):
+            summary["candidates_blocked_from_promotion"] += 1
+        row = dict(candidate)
+        row["promotion_ready"] = gates["ready"]
+        row["promotion_blockers"] = gates["blocked"]
+        candidate_rows.append(row)
+
+    for brand in published_brands:
+        cached = cache_by_slug.get(brand["slug"], {})
+        snapshot = snapshots_by_slug.get(brand["slug"], {})
+        candidate = candidates_by_slug.get(brand["slug"], {})
+        gate_result = evaluate_seo_brand_quality_gates(
+            brand,
+            cached=cached,
+            snapshot=snapshot,
+            candidate=candidate,
+            published_count=published_count,
+        )
+        page_state = gate_result["page_state"]
+        refresh_needed = is_stale_seo_cache_row(cached, now)
+        cache_failed = cached.get("refresh_status") == "failed"
+
+        if page_state["usable_image_count"] > 0:
+            summary["published_with_images"] += 1
+        else:
+            summary["published_missing_images"] += 1
+        if refresh_needed:
+            summary["published_needing_refresh"] += 1
+        if refresh_needed or cache_failed:
+            summary["published_stale_failed_cache"] += 1
+
+        published_page_rows.append(
+            {
+                "brand": brand,
+                "cache": cached,
+                "snapshot": snapshot,
+                "candidate": candidate,
+                "page_state": page_state,
+                "quality_gates": gate_result,
+                "refresh_needed": refresh_needed,
+                "cache_failed": cache_failed,
+            }
+        )
+
+    return {
+        "summary": summary,
+        "published_pages": published_page_rows,
+        "candidates": candidate_rows,
+        "activity": get_recent_seo_engine_activity(),
+        "pipeline": get_seo_engine_2_pipeline_map(),
+    }
+
+
+def summarize_engine_row(row, reason):
+    brand = row["brand"]
+    page_state = row["page_state"]
+    cache = row["cache"]
+    return {
+        "brand_name": brand["name"],
+        "brand_slug": brand["slug"],
+        "category": brand.get("category") or "",
+        "reason": reason,
+        "preview_count": page_state["preview_count"],
+        "usable_image_count": page_state["usable_image_count"],
+        "durable_image_count": page_state["durable_image_count"],
+        "refresh_status": cache.get("refresh_status") or "not_refreshed",
+        "updated_at": cache.get("updated_at"),
+        "blocked": row["quality_gates"]["blocked"],
+    }
+
+
+def build_seo_engine_2_dry_run(overview=None):
+    overview = overview or build_seo_engine_2_overview()
+    candidates = overview["candidates"]
+    published_pages = overview["published_pages"]
+
+    missing_images = [
+        summarize_engine_row(row, "Missing usable images")
+        for row in published_pages
+        if row["page_state"]["preview_count"] > 0 and row["page_state"]["usable_image_count"] <= 0
+    ]
+    missing_images.sort(key=lambda row: (row["updated_at"] or datetime.min.replace(tzinfo=timezone.utc), row["brand_name"]))
+
+    needing_cache_repair = [
+        summarize_engine_row(row, "Cache stale, empty, non-US, or failed")
+        for row in published_pages
+        if row["refresh_needed"] or row["cache_failed"]
+    ]
+    needing_cache_repair.sort(key=lambda row: (row["updated_at"] or datetime.min.replace(tzinfo=timezone.utc), row["brand_name"]))
+
+    expired_image_risk = [
+        summarize_engine_row(row, "External images should be preserved durably")
+        for row in published_pages
+        if row["page_state"]["needs_durable_images"] or row["page_state"]["external_images_only"]
+    ]
+    expired_image_risk.sort(key=lambda row: (row["updated_at"] or datetime.min.replace(tzinfo=timezone.utc), row["brand_name"]))
+
+    ready_for_promotion = [
+        candidate for candidate in candidates
+        if candidate.get("promotion_ready")
+    ]
+    ready_for_promotion.sort(
+        key=lambda row: (-(int(row.get("quality_score") or 0)), row.get("brand_name") or "")
+    )
+
+    manual_review = [
+        candidate for candidate in candidates
+        if (
+            not candidate.get("published_brand_id")
+            and candidate.get("quality_status") == "needs_review"
+            and not candidate.get("promotion_ready")
+        )
+    ]
+    manual_review.sort(
+        key=lambda row: (-(int(row.get("quality_score") or 0)), row.get("brand_name") or "")
+    )
+
+    qualify_next = [
+        candidate for candidate in candidates
+        if (
+            not candidate.get("published_brand_id")
+            and candidate.get("status") != "archived"
+            and candidate.get("quality_status") in {"untested", "failed", "inconclusive"}
+        )
+    ]
+    qualify_next.sort(key=lambda row: (row.get("updated_at") or datetime.min.replace(tzinfo=timezone.utc), row.get("brand_name") or ""))
+
+    reject_or_skip = [
+        candidate for candidate in candidates
+        if (
+            not candidate.get("published_brand_id")
+            and (
+                candidate.get("quality_status") in {"rejected", "failed"}
+                or candidate.get("status") == "archived"
+            )
+        )
+    ]
+    reject_or_skip.sort(key=lambda row: (row.get("brand_name") or "").lower())
+
+    not_seo_ready = [
+        summarize_engine_row(row, "Published page fails one or more quality gates")
+        for row in published_pages
+        if not row["quality_gates"]["seo_ready"]
+    ]
+    not_seo_ready.sort(key=lambda row: (len(row["blocked"]), row["brand_name"]), reverse=True)
+
+    return {
+        "generated_at": utcnow(),
+        "mode": "dry_run_read_only",
+        "mutates_records": False,
+        "calls_paid_apis": False,
+        "priority_order": [
+            "Published pages missing images",
+            "Published pages with broken/stale cache",
+            "Published pages with expired or external image risk",
+            "Qualified candidates ready for promotion",
+            "New candidate generation",
+        ],
+        "published_missing_images": missing_images[:SEO_ENGINE_2_DRY_RUN_LIMIT],
+        "published_needing_cache_repair": needing_cache_repair[:SEO_ENGINE_2_DRY_RUN_LIMIT],
+        "published_with_expired_image_risk": expired_image_risk[:SEO_ENGINE_2_DRY_RUN_LIMIT],
+        "candidates_ready_for_promotion": ready_for_promotion[:SEO_ENGINE_2_DRY_RUN_LIMIT],
+        "candidates_to_qualify_next": qualify_next[:SEO_ENGINE_2_DRY_RUN_LIMIT],
+        "candidates_for_manual_review": manual_review[:SEO_ENGINE_2_DRY_RUN_LIMIT],
+        "candidates_to_reject_or_skip": reject_or_skip[:SEO_ENGINE_2_DRY_RUN_LIMIT],
+        "published_pages_not_seo_ready": not_seo_ready[:SEO_ENGINE_2_DRY_RUN_LIMIT],
+        "blocked_actions": [
+            "No pages were published.",
+            "No cache refresh ran.",
+            "No image preservation ran.",
+            "No candidates were tested.",
+            "No Apify, OpenAI, Stripe, or external paid API calls were made.",
+        ],
     }
 
 
@@ -5699,6 +6126,22 @@ def seo_market_audit():
         "seo_market_audit.html",
         report=report,
         expected_country=SEO_CANDIDATE_TEST_COUNTRY,
+    )
+
+
+@app.route("/admin/seo-engine-2", methods=["GET", "POST"])
+@admin_required
+def seo_engine_2_admin():
+    overview = build_seo_engine_2_overview()
+    dry_run_plan = None
+    if request.method == "POST":
+        dry_run_plan = build_seo_engine_2_dry_run(overview)
+        flash("SEO Engine 2.0 dry run complete. No records were changed and no paid APIs were called.")
+
+    return render_template(
+        "seo_engine_2.html",
+        overview=overview,
+        dry_run_plan=dry_run_plan,
     )
 
 

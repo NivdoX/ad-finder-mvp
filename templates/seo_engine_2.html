@@ -1,0 +1,411 @@
+{% extends "layout.html" %}
+{% block title %}SEO Engine 2.0 - RunningAds{% endblock %}
+
+{% block content %}
+<div class="simple-grid">
+    <div class="panel">
+        <div class="pill">SEO Engine 2.0</div>
+        <h2>Autopilot foundation</h2>
+        <p class="muted">
+            Read-only control room for the existing RunningAds SEO engine. The dry run plans maintenance,
+            qualification, and promotion work without publishing pages, refreshing cache, deleting records,
+            or calling paid APIs.
+        </p>
+        <p>
+            <a class="topbar-btn" href="{{ url_for('seo_brand_candidates') }}">Candidates</a>
+            <a class="topbar-btn" href="{{ url_for('seo_brand_cache_admin') }}">SEO cache</a>
+            <a class="topbar-btn" href="{{ url_for('seo_market_audit') }}">Market audit</a>
+            <a class="topbar-btn" href="{{ url_for('seo_candidate_generator') }}">Generator</a>
+            <a class="topbar-btn" href="{{ url_for('admin') }}">Back to admin</a>
+        </p>
+        <form method="post">
+            <button class="form-button" type="submit">Run SEO Engine 2.0 dry run</button>
+            <p class="muted">No Apify, OpenAI, publishing, refresh, delete, or cache writes.</p>
+        </form>
+    </div>
+</div>
+
+<div class="simple-grid five-col">
+    <div class="panel">
+        <div class="pill">Candidates</div>
+        <h3>{{ overview.summary.total_candidates }}</h3>
+        <p class="muted">Total tracked</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Qualified</div>
+        <h3>{{ overview.summary.qualified_candidates }}</h3>
+        <p class="muted">Candidate rows</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Review</div>
+        <h3>{{ overview.summary.manual_review_candidates }}</h3>
+        <p class="muted">Manual review</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Rejected</div>
+        <h3>{{ overview.summary.rejected_candidates }}</h3>
+        <p class="muted">Rejected or failed</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Published</div>
+        <h3>{{ overview.summary.published_brands }}</h3>
+        <p class="muted">SEO brand pages</p>
+    </div>
+</div>
+
+<div class="simple-grid five-col">
+    <div class="panel">
+        <div class="pill">Images</div>
+        <h3>{{ overview.summary.published_with_images }}</h3>
+        <p class="muted">Published with images</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Missing</div>
+        <h3>{{ overview.summary.published_missing_images }}</h3>
+        <p class="muted">Published missing images</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Cache</div>
+        <h3>{{ overview.summary.published_stale_failed_cache }}</h3>
+        <p class="muted">Stale or failed</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Refresh</div>
+        <h3>{{ overview.summary.published_needing_refresh }}</h3>
+        <p class="muted">Need refresh</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Promotion</div>
+        <h3>{{ overview.summary.candidates_ready_for_promotion }}</h3>
+        <p class="muted">Ready candidates</p>
+    </div>
+</div>
+
+{% if dry_run_plan %}
+<div class="simple-grid">
+    <div class="panel">
+        <div class="pill">Dry run</div>
+        <h2>Action plan</h2>
+        <p class="muted">
+            Generated {{ dry_run_plan.generated_at }}. This plan is read-only and did not modify records.
+        </p>
+        <p>
+            {% for item in dry_run_plan.blocked_actions %}
+                <span class="pill cache-status not_refreshed">{{ item }}</span>
+            {% endfor %}
+        </p>
+    </div>
+</div>
+
+<div class="simple-grid two-col">
+    <div class="panel">
+        <h2>1. Published pages missing images</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Previews</th>
+                    <th>Images</th>
+                    <th>Blocked by</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in dry_run_plan.published_missing_images %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.preview_count }}</td>
+                        <td>{{ row.usable_image_count }}</td>
+                        <td>
+                            {% if row.blocked %}
+                                {{ row.blocked|join('; ') }}
+                            {% else %}
+                                {{ row.reason }}
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4"><span class="muted">No published pages with previews are missing images.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>2. Published pages needing cache repair</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Status</th>
+                    <th>Previews</th>
+                    <th>Images</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in dry_run_plan.published_needing_cache_repair %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.refresh_status }}</td>
+                        <td>{{ row.preview_count }}</td>
+                        <td>{{ row.usable_image_count }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4"><span class="muted">No published pages are flagged for cache repair.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="simple-grid two-col">
+    <div class="panel">
+        <h2>3. External image risk</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Durable</th>
+                    <th>Images</th>
+                    <th>Reason</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in dry_run_plan.published_with_expired_image_risk %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.durable_image_count }}</td>
+                        <td>{{ row.usable_image_count }}</td>
+                        <td>{{ row.reason }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4"><span class="muted">No external image preservation risks found.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>4. Qualified candidates ready for promotion</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Score</th>
+                    <th>Previews</th>
+                    <th>Category</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in dry_run_plan.candidates_ready_for_promotion %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.quality_score }}</td>
+                        <td>{{ row.preview_count or 0 }}</td>
+                        <td>{{ row.category or '-' }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4"><span class="muted">No candidates pass every promotion gate right now.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="simple-grid two-col">
+    <div class="panel">
+        <h2>Candidates to qualify next</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Status</th>
+                    <th>Source</th>
+                    <th>Last tested</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in dry_run_plan.candidates_to_qualify_next %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.quality_status_label }}</td>
+                        <td>{{ row.source_name or row.source_type or '-' }}</td>
+                        <td>{{ row.last_tested_at or '-' }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4"><span class="muted">No retryable untested, failed, or inconclusive candidates found.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Manual review or blocked</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Score</th>
+                    <th>Previews</th>
+                    <th>Blocked by</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in dry_run_plan.candidates_for_manual_review %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.quality_score }}</td>
+                        <td>{{ row.preview_count or 0 }}</td>
+                        <td>{{ row.promotion_blockers|join('; ') }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4"><span class="muted">No unpublished needs-review candidates are blocked.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="simple-grid two-col">
+    <div class="panel">
+        <h2>Published pages not SEO ready</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Reason</th>
+                    <th>Blocked by</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in dry_run_plan.published_pages_not_seo_ready %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.reason }}</td>
+                        <td>{{ row.blocked|join('; ') }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="3"><span class="muted">All published pages pass the current readiness gates.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Rejected or skipped candidates</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Brand</th>
+                    <th>Status</th>
+                    <th>Score</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in dry_run_plan.candidates_to_reject_or_skip %}
+                    <tr>
+                        <td>{{ row.brand_name }}</td>
+                        <td>{{ row.quality_status_label }}</td>
+                        <td>{{ row.quality_score or 0 }}</td>
+                        <td>
+                            {% if row.last_error %}
+                                {{ row.last_error|truncate(100, True) }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4"><span class="muted">No rejected, failed, or archived candidate rows found.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<div class="simple-grid two-col">
+    <div class="panel">
+        <h2>Quality gates</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Gate</th>
+                    <th>Why it matters</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>Brand name and clean slug</td><td>Prevents unclear or duplicate entity pages.</td></tr>
+                <tr><td>Commercial relevance</td><td>Keeps pages useful for marketers and operators.</td></tr>
+                <tr><td>Preview signal</td><td>Avoids publishing thin pages with no ad evidence.</td></tr>
+                <tr><td>Useful text</td><td>Requires metadata-backed page sections, not empty boilerplate.</td></tr>
+                <tr><td>Images or durable candidates</td><td>Prioritizes pages that can show real ad examples visually.</td></tr>
+                <tr><td>No critical cache errors</td><td>Blocks pages with failed cache and no saved previews.</td></tr>
+                <tr><td>CTA and internal links</td><td>Makes the page crawlable and useful for visitors.</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Recent activity and errors</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Started</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>API calls</th>
+                    <th>Error</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in overview.activity %}
+                    <tr>
+                        <td>{{ row.started_at }}</td>
+                        <td>{{ row.run_type }}</td>
+                        <td>{{ row.status }}</td>
+                        <td>{{ row.apify_runs }}</td>
+                        <td>
+                            {% if row.error %}
+                                <span class="danger-note">{{ row.error|truncate(100, True) }}</span>
+                            {% elif row.platform_limit_reached %}
+                                <span class="danger-note">Platform limit reached</span>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="5"><span class="muted">No SEO automation activity found.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="simple-grid">
+    <div class="panel">
+        <h2>Pipeline map</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Step</th>
+                    <th>Routes</th>
+                    <th>Functions</th>
+                    <th>Templates</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in overview.pipeline %}
+                    <tr>
+                        <td>{{ row.step }}</td>
+                        <td>{{ row.routes }}</td>
+                        <td>{{ row.functions }}</td>
+                        <td>{{ row.templates }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
