@@ -116,6 +116,77 @@
     </div>
 </div>
 
+<div class="simple-grid two-col">
+    <div class="panel">
+        <div class="pill">Automated visibility batch</div>
+        <h2>Run provider checks</h2>
+        <p class="muted">
+            This runs a small admin-triggered batch against provider APIs. Start with 5 prompts.
+            Do not run repeatedly unless needed. This does not scrape web UIs and does not publish public pages.
+        </p>
+        {% if not batch_live_enabled %}
+            <p class="muted">
+                Live AI visibility checks are disabled. Set <code>AI_VISIBILITY_LIVE_CHECKS_ENABLED=true</code>
+                to enable admin-triggered provider checks.
+            </p>
+        {% endif %}
+        <form method="post" class="stack">
+            <input type="hidden" name="form_type" value="batch">
+            <label>
+                <span class="field-label">Provider</span>
+                <select class="form-input" name="provider" required {% if not batch_live_enabled %}disabled{% endif %}>
+                    {% for provider in batch_providers %}
+                        {% set provider_status = provider_statuses[provider] %}
+                        <option value="{{ provider }}" {% if not provider_status.available %}disabled{% endif %}>
+                            {{ provider }} - {{ provider_status.status }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </label>
+            <div class="admin-filter-row compact-filter-row">
+                <label>
+                    <span class="field-label">Batch size</span>
+                    <input class="form-input" name="batch_size" type="number" min="1" max="{{ batch_max }}" value="5" {% if not batch_live_enabled %}disabled{% endif %}>
+                </label>
+                <label>
+                    <span class="field-label">Prompt selection</span>
+                    <select class="form-input" name="prompt_selection" {% if not batch_live_enabled %}disabled{% endif %}>
+                        {% for value, label in batch_selections %}
+                            <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+            <button class="form-button" type="submit" {% if not batch_live_enabled %}disabled{% endif %}>Run batch check</button>
+        </form>
+    </div>
+
+    <div class="panel">
+        <div class="pill">Provider status</div>
+        <h2>Available API keys</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Provider</th>
+                    <th>Status</th>
+                    <th>Environment</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for provider in batch_providers %}
+                    {% set provider_status = provider_statuses[provider] %}
+                    <tr>
+                        <td>{{ provider }}</td>
+                        <td>{{ provider_status.status }}</td>
+                        <td><code>{{ provider_status.env_var }}</code></td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <p class="muted">Copilot automation is intentionally not included because this task does not use browser UI automation.</p>
+    </div>
+</div>
+
 <div class="simple-grid five-col">
     <div class="panel">
         <div class="pill">High value unchecked</div>

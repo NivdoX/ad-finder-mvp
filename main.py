@@ -92,6 +92,11 @@ STRIPE_PRO_PRICE_ID = os.getenv("STRIPE_PRO_PRICE_ID", "").strip()
 RESEND_API_KEY = os.getenv("RESEND_API_KEY", "").strip()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "").strip() or "gpt-4.1-mini"
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "").strip()
+GEMINI_API_KEY = (os.getenv("GEMINI_API_KEY", "").strip() or os.getenv("GOOGLE_API_KEY", "").strip())
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip() or "gemini-1.5-flash"
+AI_VISIBILITY_BATCH_MAX = env_int("AI_VISIBILITY_BATCH_MAX", 10, minimum=1)
+AI_VISIBILITY_LIVE_CHECKS_ENABLED = env_bool("AI_VISIBILITY_LIVE_CHECKS_ENABLED", False)
 
 APIFY_TOKEN = os.getenv("APIFY_TOKEN", "").strip()
 APIFY_ACTOR_ID = os.getenv("APIFY_ACTOR_ID", "").strip()
@@ -219,6 +224,16 @@ AI_VISIBILITY_HIGH_VALUE_TOPICS = (
     "ecommerce",
     "brand",
 )
+AI_VISIBILITY_BATCH_PROVIDERS = ("OpenAI", "Perplexity", "Gemini")
+AI_VISIBILITY_BATCH_SELECTIONS = (
+    ("next_unchecked", "Next unchecked prompts"),
+    ("high_priority", "High priority prompts"),
+    ("alternatives", "Alternatives prompts"),
+    ("competitor_research", "Competitor research prompts"),
+    ("duration", "Duration prompts"),
+    ("no_recent_check", "All prompts with no recent check"),
+)
+AI_VISIBILITY_RECENT_CHECK_DAYS = 7
 AI_VISIBILITY_DEFAULT_PROMPTS = (
     ("best tools to research competitor Facebook ads", "competitor_research"),
     ("best Meta Ads Library alternatives", "alternatives"),
@@ -7170,6 +7185,147 @@ Pasted answer:
     return enriched
 
 
+def normalize_ai_visibility_batch_provider(value: str) -> str:
+    return normalize_ai_visibility_filter(value, AI_VISIBILITY_BATCH_PROVIDERS, default="")
+
+
+def normalize_ai_visibility_batch_selection(value: str) -> str:
+    value = (value or "").strip().lower()
+    allowed = {key for key, _label in AI_VISIBILITY_BATCH_SELECTIONS}
+    return value if value in allowed else "next_unchecked"
+
+
+def normalize_ai_visibility_batch_size(value) -> int:
+    try:
+        requested = int(value or 5)
+    except (TypeError, ValueError):
+        requested = 5
+    return max(1, min(requested, min(AI_VISIBILITY_BATCH_MAX, 10)))
+
+
+def get_ai_visibility_provider_statuses():
+    return {
+        "OpenAI": {
+            "available": bool(OPENAI_API_KEY),
+            "status": "available" if OPENAI_API_KEY else "missing key",
+            "env_var": "OPENAI_API_KEY",
+        },
+        "Perplexity": {
+            "available": bool(PERPLEXITY_API_KEY),
+            "status": "available" if PERPLEXITY_API_KEY else "missing key",
+            "env_var": "PERPLEXITY_API_KEY",
+        },
+        "Gemini": {
+            "available": bool(GEMINI_API_KEY),
+            "status": "available" if GEMINI_API_KEY else "missing key",
+            "env_var": "GEMINI_API_KEY or GOOGLE_API_KEY",
+        },
+    }
+
+
+def ai_visibility_provider_available(provider: str) -> bool:
+    status = get_ai_visibility_provider_statuses().get(provider)
+    return bool(status and status["available"])
+
+
+def ai_visibility_provider_result(provider_name: str, prompt_text: str, raw_answer: str = "", source_urls=None, metadata=None, error: str = ""):
+    return {
+        "provider_name": provider_name,
+        "prompt": prompt_text,
+        "raw_answer": raw_answer or "",
+        "source_urls": source_urls or [],
+        "metadata": metadata or {},
+        "error": error or "",
+    }
+
+
+def run_ai_visibility_provider_check(provider: str, prompt):
+    prompt_text = prompt["prompt"]
+    if provider == "OpenAI":
+        client = get_openai_client()
+        if not client:
+            return ai_visibility_provider_result(provider, prompt_text, error="OPENAI_API_KEY is missing.")
+        try:
+            response = client.responses.create(
+                model=OPENAI_MODEL,
+                input=prompt_text,
+                max_output_tokens=900,
+            )
+            return ai_visibility_provider_result(
+                provider,
+                prompt_text,
+                raw_answer=response.output_text,
+                metadata={"model": OPENAI_MODEL},
+            )
+        except Exception as exc:
+            return ai_visibility_provider_result(provider, prompt_text, error=str(exc))
+
+    if provider == "Perplexity":
+        if not PERPLEXITY_API_KEY:
+            return ai_visibility_provider_result(provider, prompt_text, error="PERPLEXITY_API_KEY is missing.")
+        try:
+            response = requests.post(
+                "https://api.perplexity.ai/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "sonar",
+                    "messages": [{"role": "user", "content": prompt_text}],
+                    "max_tokens": 900,
+                },
+                timeout=45,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            raw_answer = (((payload.get("choices") or [{}])[0].get("message") or {}).get("content") or "").strip()
+            citations = payload.get("citations") or []
+            return ai_visibility_provider_result(
+                provider,
+                prompt_text,
+                raw_answer=raw_answer,
+                source_urls=[str(item) for item in citations if item],
+                metadata={"model": payload.get("model") or "sonar"},
+            )
+        except Exception as exc:
+            return ai_visibility_provider_result(provider, prompt_text, error=str(exc))
+
+    if provider == "Gemini":
+        if not GEMINI_API_KEY:
+            return ai_visibility_provider_result(provider, prompt_text, error="GEMINI_API_KEY or GOOGLE_API_KEY is missing.")
+        try:
+            response = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent",
+                params={"key": GEMINI_API_KEY},
+                json={"contents": [{"parts": [{"text": prompt_text}]}]},
+                timeout=45,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            candidate = (payload.get("candidates") or [{}])[0]
+            parts = ((candidate.get("content") or {}).get("parts") or [])
+            raw_answer = "\n".join(str(part.get("text") or "").strip() for part in parts if part.get("text")).strip()
+            grounding = candidate.get("groundingMetadata") or {}
+            chunks = grounding.get("groundingChunks") or []
+            urls = []
+            for chunk in chunks:
+                web = chunk.get("web") or {}
+                if web.get("uri"):
+                    urls.append(str(web["uri"]))
+            return ai_visibility_provider_result(
+                provider,
+                prompt_text,
+                raw_answer=raw_answer,
+                source_urls=urls,
+                metadata={"model": GEMINI_MODEL},
+            )
+        except Exception as exc:
+            return ai_visibility_provider_result(provider, prompt_text, error=str(exc))
+
+    return ai_visibility_provider_result(provider, prompt_text, error="Unsupported provider.")
+
+
 def ai_visibility_prompt_row_to_dict(row):
     return {
         "id": row[0],
@@ -7342,6 +7498,201 @@ def save_ai_visibility_quick_check(form):
                 return analysis
     finally:
         conn.close()
+
+
+def insert_ai_visibility_analysis(cur, analysis):
+    cur.execute(
+        """
+        INSERT INTO ai_visibility_checks (
+            prompt_id, platform, checked_at, runningads_mentioned,
+            runningads_prominence, competitors_mentioned, source_urls,
+            cited_pages, answer_summary, action_needed, priority,
+            status, notes, raw_answer, missing_topic, analysis_method,
+            created_at, updated_at
+        )
+        VALUES (
+            %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            NOW(), NOW()
+        )
+        """,
+        (
+            analysis["prompt_id"],
+            analysis["platform"],
+            analysis["runningads_mentioned"],
+            analysis["runningads_prominence"],
+            analysis["competitors_mentioned"],
+            analysis["source_urls"],
+            analysis["cited_pages"],
+            analysis["answer_summary"],
+            analysis["action_needed"],
+            analysis["priority"],
+            analysis["status"],
+            analysis["notes"],
+            analysis["raw_answer"],
+            analysis["missing_topic"],
+            analysis["analysis_method"],
+        ),
+    )
+
+
+def select_ai_visibility_batch_prompts(provider: str, selection: str, batch_size: int):
+    topic_filter = {
+        "alternatives": {"alternatives"},
+        "competitor_research": {"competitor_research"},
+        "duration": {"duration"},
+        "high_priority": set(AI_VISIBILITY_HIGH_VALUE_TOPICS),
+    }.get(selection)
+    high_value_topic_rank = {topic: index for index, topic in enumerate(AI_VISIBILITY_HIGH_VALUE_TOPICS)}
+
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT p.id, p.prompt_key, p.prompt, p.topic, p.is_active,
+                           p.created_at, p.updated_at, MAX(c.checked_at) AS last_checked_at
+                    FROM ai_visibility_prompts p
+                    LEFT JOIN ai_visibility_checks c
+                      ON c.prompt_id = p.id AND c.platform = %s
+                    WHERE p.is_active = TRUE
+                    GROUP BY p.id, p.prompt_key, p.prompt, p.topic, p.is_active,
+                             p.created_at, p.updated_at
+                    """,
+                    (provider,),
+                )
+                rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    prompts = []
+    skipped_recent_count = 0
+    recent_cutoff = utcnow() - timedelta(days=AI_VISIBILITY_RECENT_CHECK_DAYS)
+    for row in rows:
+        prompt = ai_visibility_prompt_row_to_dict(row[:7])
+        last_checked_at = row[7]
+        prompt["last_checked_at"] = last_checked_at
+        topic = (prompt["topic"] or "").lower()
+        if topic_filter and topic not in topic_filter:
+            continue
+        is_recent = bool(last_checked_at and last_checked_at >= recent_cutoff)
+        if is_recent:
+            skipped_recent_count += 1
+            continue
+        prompts.append(prompt)
+
+    if selection == "next_unchecked":
+        prompts = [prompt for prompt in prompts if not prompt.get("last_checked_at")]
+
+    prompts.sort(
+        key=lambda item: (
+            bool(item.get("last_checked_at")),
+            high_value_topic_rank.get((item["topic"] or "").lower(), len(high_value_topic_rank)),
+            item.get("last_checked_at") or datetime.min.replace(tzinfo=timezone.utc),
+            item["prompt"],
+        )
+    )
+    return prompts[:batch_size], skipped_recent_count
+
+
+def run_ai_visibility_batch(form):
+    provider = normalize_ai_visibility_batch_provider(form.get("provider"))
+    selection = normalize_ai_visibility_batch_selection(form.get("prompt_selection"))
+    batch_size = normalize_ai_visibility_batch_size(form.get("batch_size"))
+    summary = {
+        "provider": provider or "Unknown",
+        "prompt_selection": selection,
+        "prompts_selected": 0,
+        "checks_attempted": 0,
+        "checks_saved": 0,
+        "runningads_mentioned_count": 0,
+        "runningads_not_mentioned_count": 0,
+        "competitors_found": set(),
+        "high_priority_gaps_created": 0,
+        "provider_errors": [],
+        "skipped_recently_checked": 0,
+        "skipped_provider_unavailable": 0,
+        "skipped_disabled": 0,
+    }
+
+    if not AI_VISIBILITY_LIVE_CHECKS_ENABLED:
+        summary["skipped_disabled"] = batch_size
+        return summary
+    if not provider:
+        summary["provider_errors"].append("Choose a supported provider.")
+        return summary
+    if not ai_visibility_provider_available(provider):
+        summary["skipped_provider_unavailable"] = batch_size
+        return summary
+
+    prompts, skipped_recent_count = select_ai_visibility_batch_prompts(provider, selection, batch_size)
+    summary["skipped_recently_checked"] = skipped_recent_count
+    summary["prompts_selected"] = len(prompts)
+    if not prompts:
+        return summary
+
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                for prompt in prompts:
+                    summary["checks_attempted"] += 1
+                    try:
+                        provider_result = run_ai_visibility_provider_check(provider, prompt)
+                        if provider_result["error"]:
+                            summary["provider_errors"].append(f"{prompt['prompt']}: {provider_result['error']}")
+                            continue
+                        raw_answer = provider_result["raw_answer"].strip()
+                        if not raw_answer:
+                            summary["provider_errors"].append(f"{prompt['prompt']}: provider returned an empty answer")
+                            continue
+                        source_urls = "\n".join(provider_result["source_urls"])
+                        notes = f"Automated AI visibility batch via {provider}."
+                        if provider_result["metadata"]:
+                            notes += f" Metadata: {json.dumps(provider_result['metadata'], ensure_ascii=True)}"
+                        analysis = deterministic_ai_visibility_analysis(prompt, provider, raw_answer, source_urls, notes)
+                        analysis = maybe_enrich_ai_visibility_analysis(prompt, provider, raw_answer, source_urls, analysis)
+                        analysis["analysis_method"] = f"batch_{analysis['analysis_method']}"
+                        insert_ai_visibility_analysis(cur, analysis)
+                        summary["checks_saved"] += 1
+                        if analysis["runningads_mentioned"]:
+                            summary["runningads_mentioned_count"] += 1
+                        else:
+                            summary["runningads_not_mentioned_count"] += 1
+                        if analysis["priority"] == "high" and not analysis["runningads_mentioned"]:
+                            summary["high_priority_gaps_created"] += 1
+                        for competitor in parse_ai_visibility_terms(analysis["competitors_mentioned"]):
+                            summary["competitors_found"].add(competitor)
+                    except Exception as exc:
+                        summary["provider_errors"].append(f"{prompt['prompt']}: {str(exc)}")
+    finally:
+        conn.close()
+
+    return summary
+
+
+def format_ai_visibility_batch_summary(summary):
+    competitors = ", ".join(sorted(summary["competitors_found"])) if summary["competitors_found"] else "none"
+    errors = "; ".join(summary["provider_errors"][:3])
+    if len(summary["provider_errors"]) > 3:
+        errors += f"; plus {len(summary['provider_errors']) - 3} more"
+    if summary["skipped_disabled"]:
+        return (
+            "Live AI visibility checks are disabled. Set AI_VISIBILITY_LIVE_CHECKS_ENABLED=true "
+            "to enable admin-triggered provider checks."
+        )
+    if summary["skipped_provider_unavailable"]:
+        return f"{summary['provider']} is unavailable because its API key is missing."
+    return (
+        f"AI visibility batch finished for {summary['provider']}: "
+        f"selected {summary['prompts_selected']}, attempted {summary['checks_attempted']}, "
+        f"saved {summary['checks_saved']}, RunningAds mentioned {summary['runningads_mentioned_count']}, "
+        f"not mentioned {summary['runningads_not_mentioned_count']}, "
+        f"recently checked skipped {summary['skipped_recently_checked']}, "
+        f"high-priority gaps {summary['high_priority_gaps_created']}, "
+        f"competitors found: {competitors}. "
+        f"Errors: {errors or 'none'}."
+    )
 
 
 def get_ai_visibility_tracker_data(filters):
@@ -8171,7 +8522,10 @@ Give a short weekly-style summary:
 def ai_visibility_admin():
     if request.method == "POST":
         try:
-            if request.form.get("form_type") == "quick":
+            if request.form.get("form_type") == "batch":
+                summary = run_ai_visibility_batch(request.form)
+                flash(format_ai_visibility_batch_summary(summary))
+            elif request.form.get("form_type") == "quick":
                 analysis = save_ai_visibility_quick_check(request.form)
                 mentioned_label = "mentioned" if analysis["runningads_mentioned"] else "not mentioned"
                 flash(
@@ -8196,6 +8550,11 @@ def ai_visibility_admin():
         priorities=AI_VISIBILITY_PRIORITIES,
         statuses=AI_VISIBILITY_STATUSES,
         actions=AI_VISIBILITY_ACTIONS,
+        batch_providers=AI_VISIBILITY_BATCH_PROVIDERS,
+        batch_selections=AI_VISIBILITY_BATCH_SELECTIONS,
+        batch_max=min(AI_VISIBILITY_BATCH_MAX, 10),
+        batch_live_enabled=AI_VISIBILITY_LIVE_CHECKS_ENABLED,
+        provider_statuses=get_ai_visibility_provider_statuses(),
     )
 
 
@@ -10087,6 +10446,12 @@ def sitemap_xml():
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "run-seo-engine-maintenance":
         raise SystemExit(run_seo_engine_maintenance_cli(sys.argv[2:]))
+    if len(sys.argv) > 1 and sys.argv[1] == "run-ai-visibility-batch":
+        print(
+            "AI visibility batch CLI is intentionally dry-run only in this release. "
+            "Use /admin/ai-visibility with AI_VISIBILITY_LIVE_CHECKS_ENABLED=true for manual admin-triggered checks."
+        )
+        raise SystemExit(0)
 
     port = int(os.environ.get("PORT", 3000))
     app.run(host="0.0.0.0", port=port)
