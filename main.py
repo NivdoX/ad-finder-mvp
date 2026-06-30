@@ -164,6 +164,73 @@ SEO_CANDIDATE_QUERY_ALIASES = {
 
 SEO_CACHE_DIAGNOSTIC_SLUGS = ("whoop", "native", "oura")
 
+AI_VISIBILITY_PLATFORMS = (
+    "ChatGPT",
+    "Perplexity",
+    "Gemini",
+    "Google AI Overview",
+    "Google AI Mode",
+    "YouTube Search",
+    "Reddit",
+    "Other",
+)
+AI_VISIBILITY_PRIORITIES = ("low", "medium", "high")
+AI_VISIBILITY_STATUSES = ("open", "planned", "done", "ignored")
+AI_VISIBILITY_ACTIONS = (
+    "Create topic page",
+    "Create comparison page",
+    "Improve authority page",
+    "Add FAQ",
+    "Add structured data",
+    "Create YouTube video",
+    "Create external mention",
+    "Create Reddit post",
+    "Improve internal links",
+    "No action",
+)
+AI_VISIBILITY_DEFAULT_PROMPTS = (
+    ("best tools to research competitor Facebook ads", "competitor_research"),
+    ("best Meta Ads Library alternatives", "alternatives"),
+    ("how to find competitor Facebook ads", "workflow"),
+    ("how to see how long a Facebook ad has been running", "duration"),
+    ("best tools for ecommerce ad research", "ecommerce"),
+    ("best ad spy tools for Meta ads", "ad_spy"),
+    ("how to find ads that have been running for weeks", "duration"),
+    ("tools for Facebook ads creative research", "creative_research"),
+    ("how do I find winning ecommerce ads", "ecommerce"),
+    ("alternatives to Meta Ads Library for marketers", "alternatives"),
+    ("competitor Meta ads research tools", "competitor_research"),
+    ("best Facebook ad research tools", "competitor_research"),
+    ("how to research competitor Instagram ads", "workflow"),
+    ("how to find active Facebook ads from competitors", "workflow"),
+    ("tools to find long running Facebook ads", "duration"),
+    ("Meta ads creative research tools", "creative_research"),
+    ("Facebook ads competitor analysis tools", "competitor_research"),
+    ("ecommerce competitor ad research", "ecommerce"),
+    ("ad spy tool alternatives", "alternatives"),
+    ("Meta Ads Library workflow for agencies", "agencies"),
+    ("how agencies research competitor ads", "agencies"),
+    ("best tools for paid social agencies", "agencies"),
+    ("how to monitor competitor Meta ads", "monitoring"),
+    ("how to find ad creative inspiration for ecommerce", "ecommerce"),
+    ("how to identify long running Meta ads", "duration"),
+    ("what are long running Facebook ads", "duration"),
+    ("why are long running ads useful", "duration"),
+    ("RunningAds alternative to Meta Ads Library", "brand"),
+    ("RunningAds competitor ad research", "brand"),
+    ("RunningAds Meta ads research tool", "brand"),
+    ("competitor Facebook ads tool for agencies", "agencies"),
+    ("Facebook ad examples from competitors", "creative_research"),
+    ("Meta ads research workflow for ecommerce", "ecommerce"),
+    ("how to find competitor Instagram ad creatives", "creative_research"),
+    ("best tools to monitor competitor Facebook ads", "monitoring"),
+    ("Meta Ads Library alternatives for ecommerce brands", "ecommerce"),
+    ("how to find long running Instagram ads", "duration"),
+    ("paid social competitor research tools", "agencies"),
+    ("Facebook ads creative inspiration tools", "creative_research"),
+    ("RunningAds for ecommerce ad research", "brand"),
+)
+
 AUTHORITY_PAGES = {
     "about-runningads": {
         "route": "/about-runningads",
@@ -1089,6 +1156,43 @@ def ensure_schema():
                     """
                 )
 
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS ai_visibility_prompts (
+                        id SERIAL PRIMARY KEY,
+                        prompt_key TEXT UNIQUE NOT NULL,
+                        prompt TEXT NOT NULL,
+                        topic TEXT,
+                        is_active BOOLEAN DEFAULT TRUE,
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """
+                )
+
+                cur.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS ai_visibility_checks (
+                        id SERIAL PRIMARY KEY,
+                        prompt_id INTEGER REFERENCES ai_visibility_prompts(id) ON DELETE CASCADE,
+                        platform TEXT NOT NULL,
+                        checked_at TIMESTAMPTZ DEFAULT NOW(),
+                        runningads_mentioned BOOLEAN DEFAULT FALSE,
+                        runningads_prominence TEXT,
+                        competitors_mentioned TEXT,
+                        source_urls TEXT,
+                        cited_pages TEXT,
+                        answer_summary TEXT,
+                        action_needed TEXT,
+                        priority TEXT DEFAULT 'medium',
+                        status TEXT DEFAULT 'open',
+                        notes TEXT,
+                        created_at TIMESTAMPTZ DEFAULT NOW(),
+                        updated_at TIMESTAMPTZ DEFAULT NOW()
+                    );
+                    """
+                )
+
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT;")
                 cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT;")
@@ -1196,6 +1300,29 @@ def ensure_schema():
                 cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS platform_limit_reached BOOLEAN DEFAULT FALSE;")
                 cur.execute("ALTER TABLE seo_automation_runs ADD COLUMN IF NOT EXISTS error TEXT;")
 
+                cur.execute("ALTER TABLE ai_visibility_prompts ADD COLUMN IF NOT EXISTS prompt_key TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_prompts ADD COLUMN IF NOT EXISTS prompt TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_prompts ADD COLUMN IF NOT EXISTS topic TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_prompts ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;")
+                cur.execute("ALTER TABLE ai_visibility_prompts ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
+                cur.execute("ALTER TABLE ai_visibility_prompts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
+
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS prompt_id INTEGER;")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS platform TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS checked_at TIMESTAMPTZ DEFAULT NOW();")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS runningads_mentioned BOOLEAN DEFAULT FALSE;")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS runningads_prominence TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS competitors_mentioned TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS source_urls TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS cited_pages TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS answer_summary TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS action_needed TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'medium';")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'open';")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS notes TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
+
                 cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS brand_slug TEXT;")
                 cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS source_url TEXT;")
                 cur.execute("ALTER TABLE seo_ad_images ADD COLUMN IF NOT EXISTS source_url_hash TEXT;")
@@ -1302,6 +1429,24 @@ def ensure_schema():
                     ON seo_automation_runs(started_at);
                     """
                 )
+                cur.execute(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_visibility_prompts_prompt_key
+                    ON ai_visibility_prompts(prompt_key);
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_ai_visibility_checks_prompt_platform
+                    ON ai_visibility_checks(prompt_id, platform, checked_at DESC);
+                    """
+                )
+                cur.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_ai_visibility_checks_status_priority
+                    ON ai_visibility_checks(status, priority, checked_at DESC);
+                    """
+                )
 
                 cur.execute(
                     """
@@ -1314,6 +1459,19 @@ def ensure_schema():
                     ON CONFLICT (id) DO NOTHING;
                     """
                 )
+
+                for prompt, topic in AI_VISIBILITY_DEFAULT_PROMPTS:
+                    prompt_key = slugify_brand_name(prompt)
+                    cur.execute(
+                        """
+                        INSERT INTO ai_visibility_prompts (
+                            prompt_key, prompt, topic, is_active, created_at, updated_at
+                        )
+                        VALUES (%s, %s, %s, TRUE, NOW(), NOW())
+                        ON CONFLICT (prompt_key) DO NOTHING;
+                        """,
+                        (prompt_key, prompt, topic),
+                    )
 
                 for brand in BRAND_PAGES:
                     cur.execute(
@@ -6742,6 +6900,267 @@ def create_daily_cap_alert(user):
     )
 
 
+def normalize_ai_visibility_filter(value: str, allowed_values, default: str = "") -> str:
+    value = (value or "").strip()
+    if not value:
+        return default
+    allowed_lookup = {item.lower(): item for item in allowed_values}
+    return allowed_lookup.get(value.lower(), default)
+
+
+def normalize_ai_visibility_mentioned(value: str) -> str:
+    value = (value or "").strip().lower()
+    if value in {"yes", "true", "1"}:
+        return "yes"
+    if value in {"no", "false", "0"}:
+        return "no"
+    return ""
+
+
+def parse_ai_visibility_terms(value: str):
+    raw_parts = re.split(r"[\n,;]+", value or "")
+    return [part.strip() for part in raw_parts if part.strip()]
+
+
+def ai_visibility_prompt_row_to_dict(row):
+    return {
+        "id": row[0],
+        "prompt_key": row[1],
+        "prompt": row[2],
+        "topic": row[3],
+        "is_active": row[4],
+        "created_at": row[5],
+        "updated_at": row[6],
+    }
+
+
+def ai_visibility_check_row_to_dict(row):
+    return {
+        "id": row[0],
+        "prompt_id": row[1],
+        "prompt": row[2],
+        "topic": row[3],
+        "platform": row[4],
+        "checked_at": row[5],
+        "runningads_mentioned": bool(row[6]),
+        "runningads_prominence": row[7] or "",
+        "competitors_mentioned": row[8] or "",
+        "source_urls": row[9] or "",
+        "cited_pages": row[10] or "",
+        "answer_summary": row[11] or "",
+        "action_needed": row[12] or "",
+        "priority": row[13] or "medium",
+        "status": row[14] or "open",
+        "notes": row[15] or "",
+        "created_at": row[16],
+        "updated_at": row[17],
+    }
+
+
+def build_ai_visibility_filters(args):
+    return {
+        "platform": normalize_ai_visibility_filter(args.get("platform"), AI_VISIBILITY_PLATFORMS),
+        "mentioned": normalize_ai_visibility_mentioned(args.get("mentioned")),
+        "priority": normalize_ai_visibility_filter(args.get("priority"), AI_VISIBILITY_PRIORITIES),
+        "status": normalize_ai_visibility_filter(args.get("status"), AI_VISIBILITY_STATUSES),
+    }
+
+
+def save_ai_visibility_check(form):
+    prompt_id = int(form.get("prompt_id") or 0)
+    if prompt_id <= 0:
+        raise ValueError("Choose a prompt before saving a check.")
+
+    platform = normalize_ai_visibility_filter(form.get("platform"), AI_VISIBILITY_PLATFORMS, default="Other")
+    priority = normalize_ai_visibility_filter(form.get("priority"), AI_VISIBILITY_PRIORITIES, default="medium")
+    status = normalize_ai_visibility_filter(form.get("status"), AI_VISIBILITY_STATUSES, default="open")
+    runningads_mentioned = (form.get("runningads_mentioned") or "").strip().lower() == "yes"
+
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id FROM ai_visibility_prompts WHERE id = %s AND is_active = TRUE",
+                    (prompt_id,),
+                )
+                if not cur.fetchone():
+                    raise ValueError("Prompt was not found.")
+
+                cur.execute(
+                    """
+                    INSERT INTO ai_visibility_checks (
+                        prompt_id, platform, checked_at, runningads_mentioned,
+                        runningads_prominence, competitors_mentioned, source_urls,
+                        cited_pages, answer_summary, action_needed, priority,
+                        status, notes, created_at, updated_at
+                    )
+                    VALUES (
+                        %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        NOW(), NOW()
+                    )
+                    """,
+                    (
+                        prompt_id,
+                        platform,
+                        runningads_mentioned,
+                        (form.get("runningads_prominence") or "").strip(),
+                        (form.get("competitors_mentioned") or "").strip(),
+                        (form.get("source_urls") or "").strip(),
+                        (form.get("cited_pages") or "").strip(),
+                        (form.get("answer_summary") or "").strip(),
+                        (form.get("action_needed") or "").strip(),
+                        priority,
+                        status,
+                        (form.get("notes") or "").strip(),
+                    ),
+                )
+    finally:
+        conn.close()
+
+
+def get_ai_visibility_tracker_data(filters):
+    where = []
+    params = []
+    if filters["platform"]:
+        where.append("c.platform = %s")
+        params.append(filters["platform"])
+    if filters["mentioned"] == "yes":
+        where.append("c.runningads_mentioned = TRUE")
+    elif filters["mentioned"] == "no":
+        where.append("c.runningads_mentioned = FALSE")
+    if filters["priority"]:
+        where.append("COALESCE(c.priority, 'medium') = %s")
+        params.append(filters["priority"])
+    if filters["status"]:
+        where.append("COALESCE(c.status, 'open') = %s")
+        params.append(filters["status"])
+
+    checks_where_sql = f"WHERE {' AND '.join(where)}" if where else ""
+
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, prompt_key, prompt, topic, is_active, created_at, updated_at
+                    FROM ai_visibility_prompts
+                    WHERE is_active = TRUE
+                    ORDER BY topic ASC, prompt ASC
+                    """
+                )
+                prompts = [ai_visibility_prompt_row_to_dict(row) for row in cur.fetchall()]
+
+                cur.execute(
+                    f"""
+                    SELECT c.id, c.prompt_id, p.prompt, p.topic, c.platform, c.checked_at,
+                           c.runningads_mentioned, c.runningads_prominence,
+                           c.competitors_mentioned, c.source_urls, c.cited_pages,
+                           c.answer_summary, c.action_needed, c.priority, c.status,
+                           c.notes, c.created_at, c.updated_at
+                    FROM ai_visibility_checks c
+                    JOIN ai_visibility_prompts p ON p.id = c.prompt_id
+                    {checks_where_sql}
+                    ORDER BY c.checked_at DESC, c.id DESC
+                    LIMIT 250
+                    """,
+                    tuple(params),
+                )
+                checks = [ai_visibility_check_row_to_dict(row) for row in cur.fetchall()]
+
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (c.prompt_id, c.platform)
+                           c.id, c.prompt_id, p.prompt, p.topic, c.platform, c.checked_at,
+                           c.runningads_mentioned, c.runningads_prominence,
+                           c.competitors_mentioned, c.source_urls, c.cited_pages,
+                           c.answer_summary, c.action_needed, c.priority, c.status,
+                           c.notes, c.created_at, c.updated_at
+                    FROM ai_visibility_checks c
+                    JOIN ai_visibility_prompts p ON p.id = c.prompt_id
+                    ORDER BY c.prompt_id, c.platform, c.checked_at DESC, c.id DESC
+                    """
+                )
+                latest_by_prompt_platform = [ai_visibility_check_row_to_dict(row) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+    latest_by_prompt_id = {}
+    for check in sorted(latest_by_prompt_platform, key=lambda item: (item["checked_at"], item["id"]), reverse=True):
+        latest_by_prompt_id.setdefault(check["prompt_id"], check)
+
+    prompt_rows = []
+    for prompt in prompts:
+        latest = latest_by_prompt_id.get(prompt["id"])
+        if filters["platform"]:
+            latest = next(
+                (
+                    check
+                    for check in latest_by_prompt_platform
+                    if check["prompt_id"] == prompt["id"] and check["platform"] == filters["platform"]
+                ),
+                None,
+            )
+        prompt_rows.append({**prompt, "latest_check": latest})
+
+    checked_prompt_ids = {check["prompt_id"] for check in latest_by_prompt_platform}
+    competitor_counts = {}
+    missing_topic_counts = {}
+    for check in checks:
+        for competitor in parse_ai_visibility_terms(check["competitors_mentioned"]):
+            key = competitor.strip()
+            competitor_counts[key] = competitor_counts.get(key, 0) + 1
+        if not check["runningads_mentioned"] and check["topic"]:
+            missing_topic_counts[check["topic"]] = missing_topic_counts.get(check["topic"], 0) + 1
+
+    total_checks = len(checks)
+    mentioned_count = sum(1 for check in checks if check["runningads_mentioned"])
+    high_priority_gaps = [
+        check
+        for check in checks
+        if check["priority"] == "high" and check["status"] in {"open", "planned"} and not check["runningads_mentioned"]
+    ]
+    action_queue = [
+        check
+        for check in checks
+        if check["status"] in {"open", "planned"} and (check["action_needed"] or check["priority"] == "high")
+    ][:25]
+
+    summary = {
+        "total_prompts": len(prompts),
+        "total_checks": total_checks,
+        "runningads_mentioned_count": mentioned_count,
+        "runningads_mentioned_rate": (mentioned_count / total_checks * 100) if total_checks else 0,
+        "prompts_never_checked": len([prompt for prompt in prompts if prompt["id"] not in checked_prompt_ids]),
+        "high_priority_gaps": len(high_priority_gaps),
+        "most_mentioned_competitors": sorted(
+            [{"name": key, "count": value} for key, value in competitor_counts.items()],
+            key=lambda item: item["count"],
+            reverse=True,
+        )[:10],
+        "most_common_missing_topics": sorted(
+            [{"topic": key, "count": value} for key, value in missing_topic_counts.items()],
+            key=lambda item: item["count"],
+            reverse=True,
+        )[:10],
+        "latest_checks_by_platform": [
+            {
+                "platform": platform,
+                "count": len([check for check in checks if check["platform"] == platform]),
+            }
+            for platform in AI_VISIBILITY_PLATFORMS
+        ],
+    }
+
+    return {
+        "summary": summary,
+        "prompts": prompt_rows,
+        "latest_checks": checks[:50],
+        "action_queue": action_queue,
+    }
+
+
 def check_rate_limit(identifier: str, endpoint: str):
     conn = get_db_connection()
     try:
@@ -7392,6 +7811,30 @@ Give a short weekly-style summary:
         alerts=alerts,
         feedback_rows=feedback_rows,
         ai_summary=ai_summary,
+    )
+
+
+@app.route("/admin/ai-visibility", methods=["GET", "POST"])
+@admin_required
+def ai_visibility_admin():
+    if request.method == "POST":
+        try:
+            save_ai_visibility_check(request.form)
+            flash("AI visibility check saved.")
+        except Exception as exc:
+            flash(f"AI visibility check was not saved: {str(exc)}")
+        return redirect(url_for("ai_visibility_admin"))
+
+    filters = build_ai_visibility_filters(request.args)
+    tracker = get_ai_visibility_tracker_data(filters)
+    return render_template(
+        "ai_visibility.html",
+        tracker=tracker,
+        filters=filters,
+        platforms=AI_VISIBILITY_PLATFORMS,
+        priorities=AI_VISIBILITY_PRIORITIES,
+        statuses=AI_VISIBILITY_STATUSES,
+        actions=AI_VISIBILITY_ACTIONS,
     )
 
 

@@ -1,0 +1,310 @@
+{% extends "layout.html" %}
+{% block title %}AI Visibility Tracker - RunningAds{% endblock %}
+
+{% block content %}
+<div class="simple-grid">
+    <div class="panel">
+        <div class="pill">AI Visibility Tracker v1</div>
+        <h2>Manual AI/search visibility radar</h2>
+        <p class="muted">
+            Track whether RunningAds appears in important AI answer, search, YouTube, and Reddit research prompts.
+            This tool stores manual observations only. It does not call OpenAI, Gemini, Perplexity, Google, YouTube, Reddit, or paid APIs.
+        </p>
+        <p>
+            <a class="topbar-btn" href="{{ url_for('admin') }}">Back to admin</a>
+            <a class="topbar-btn" href="{{ url_for('seo_engine_2_admin') }}">SEO Engine 2.0</a>
+        </p>
+    </div>
+</div>
+
+<div class="simple-grid five-col">
+    <div class="panel">
+        <div class="pill">Prompts</div>
+        <h3>{{ tracker.summary.total_prompts }}</h3>
+        <p class="muted">Tracked prompts</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Checks</div>
+        <h3>{{ tracker.summary.total_checks }}</h3>
+        <p class="muted">Matching filters</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Mentioned</div>
+        <h3>{{ tracker.summary.runningads_mentioned_count }}</h3>
+        <p class="muted">{{ '%.1f'|format(tracker.summary.runningads_mentioned_rate) }}% mention rate</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Unchecked</div>
+        <h3>{{ tracker.summary.prompts_never_checked }}</h3>
+        <p class="muted">Never checked</p>
+    </div>
+    <div class="panel">
+        <div class="pill">Gaps</div>
+        <h3>{{ tracker.summary.high_priority_gaps }}</h3>
+        <p class="muted">High priority open/planned misses</p>
+    </div>
+</div>
+
+<div class="simple-grid">
+    <div class="panel">
+        <div class="pill">Filters</div>
+        <form method="get" class="admin-filter-row">
+            <label>
+                <span class="field-label">Platform</span>
+                <select class="form-input" name="platform">
+                    <option value="">All platforms</option>
+                    {% for platform in platforms %}
+                        <option value="{{ platform }}" {% if filters.platform == platform %}selected{% endif %}>{{ platform }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                <span class="field-label">RunningAds mentioned</span>
+                <select class="form-input" name="mentioned">
+                    <option value="">Any</option>
+                    <option value="yes" {% if filters.mentioned == 'yes' %}selected{% endif %}>Yes</option>
+                    <option value="no" {% if filters.mentioned == 'no' %}selected{% endif %}>No</option>
+                </select>
+            </label>
+            <label>
+                <span class="field-label">Priority</span>
+                <select class="form-input" name="priority">
+                    <option value="">Any</option>
+                    {% for priority in priorities %}
+                        <option value="{{ priority }}" {% if filters.priority == priority %}selected{% endif %}>{{ priority|title }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                <span class="field-label">Status</span>
+                <select class="form-input" name="status">
+                    <option value="">Any</option>
+                    {% for status in statuses %}
+                        <option value="{{ status }}" {% if filters.status == status %}selected{% endif %}>{{ status|replace('_', ' ')|title }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <div class="admin-filter-actions">
+                <button class="form-button" type="submit">Apply filters</button>
+                <a class="topbar-btn" href="{{ url_for('ai_visibility_admin') }}">Clear</a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="simple-grid two-col">
+    <div class="panel">
+        <div class="pill">Add manual check</div>
+        <h2>Record a result</h2>
+        <form method="post" class="stack">
+            <label>
+                <span class="field-label">Prompt</span>
+                <select class="form-input" name="prompt_id" required>
+                    <option value="">Choose prompt</option>
+                    {% for prompt in tracker.prompts %}
+                        <option value="{{ prompt.id }}">{{ prompt.prompt }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                <span class="field-label">Platform</span>
+                <select class="form-input" name="platform" required>
+                    {% for platform in platforms %}
+                        <option value="{{ platform }}">{{ platform }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                <span class="field-label">RunningAds mentioned</span>
+                <select class="form-input" name="runningads_mentioned">
+                    <option value="no">No</option>
+                    <option value="yes">Yes</option>
+                </select>
+            </label>
+            <label>
+                <span class="field-label">RunningAds position or prominence</span>
+                <input class="form-input" name="runningads_prominence" placeholder="Example: Mentioned as a focused Meta ads research tool">
+            </label>
+            <label>
+                <span class="field-label">Competitors/tools mentioned</span>
+                <textarea class="form-textarea" name="competitors_mentioned" placeholder="Meta Ads Library, BigSpy, Minea, AdSpy"></textarea>
+            </label>
+            <label>
+                <span class="field-label">Source URLs or cited URLs</span>
+                <textarea class="form-textarea" name="source_urls" placeholder="/best-meta-ads-library-alternatives or external source URLs"></textarea>
+            </label>
+            <label>
+                <span class="field-label">Cited RunningAds pages</span>
+                <textarea class="form-textarea" name="cited_pages" placeholder="/about-runningads, /runningads-vs-meta-ads-library"></textarea>
+            </label>
+            <label>
+                <span class="field-label">Answer summary</span>
+                <textarea class="form-textarea" name="answer_summary" placeholder="Short factual summary of what the answer said"></textarea>
+            </label>
+            <label>
+                <span class="field-label">Action needed</span>
+                <select class="form-input" name="action_needed">
+                    {% for action in actions %}
+                        <option value="{{ action }}">{{ action }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <div class="admin-filter-row compact-filter-row">
+                <label>
+                    <span class="field-label">Priority</span>
+                    <select class="form-input" name="priority">
+                        {% for priority in priorities %}
+                            <option value="{{ priority }}" {% if priority == 'medium' %}selected{% endif %}>{{ priority|title }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <label>
+                    <span class="field-label">Status</span>
+                    <select class="form-input" name="status">
+                        {% for status in statuses %}
+                            <option value="{{ status }}">{{ status|replace('_', ' ')|title }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+            </div>
+            <label>
+                <span class="field-label">Notes</span>
+                <textarea class="form-textarea" name="notes" placeholder="Manual observation notes"></textarea>
+            </label>
+            <button class="form-button" type="submit">Save manual check</button>
+        </form>
+    </div>
+
+    <div class="panel">
+        <div class="pill">Action queue</div>
+        <h2>Open work to consider</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Prompt</th>
+                    <th>Platform</th>
+                    <th>Priority</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in tracker.action_queue %}
+                    <tr>
+                        <td>{{ row.prompt }}</td>
+                        <td>{{ row.platform }}</td>
+                        <td>{{ row.priority|title }}</td>
+                        <td>{{ row.action_needed or 'Review gap' }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4"><span class="muted">No open actions match the current filters.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="simple-grid two-col">
+    <div class="panel">
+        <h2>Most mentioned competitors/tools</h2>
+        <table class="table">
+            <thead><tr><th>Name</th><th>Mentions</th></tr></thead>
+            <tbody>
+                {% for row in tracker.summary.most_mentioned_competitors %}
+                    <tr><td>{{ row.name }}</td><td>{{ row.count }}</td></tr>
+                {% else %}
+                    <tr><td colspan="2"><span class="muted">No competitor mentions recorded yet.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="panel">
+        <h2>Missing topics</h2>
+        <table class="table">
+            <thead><tr><th>Topic</th><th>Misses</th></tr></thead>
+            <tbody>
+                {% for row in tracker.summary.most_common_missing_topics %}
+                    <tr><td>{{ row.topic }}</td><td>{{ row.count }}</td></tr>
+                {% else %}
+                    <tr><td colspan="2"><span class="muted">No missing topics recorded yet.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="simple-grid">
+    <div class="panel">
+        <h2>Prompt radar</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Prompt</th>
+                    <th>Topic</th>
+                    <th>Latest platform</th>
+                    <th>Mentioned?</th>
+                    <th>Priority</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for prompt in tracker.prompts %}
+                    {% set latest = prompt.latest_check %}
+                    <tr>
+                        <td>{{ prompt.prompt }}</td>
+                        <td>{{ prompt.topic or '-' }}</td>
+                        <td>{{ latest.platform if latest else 'Not checked' }}</td>
+                        <td>
+                            {% if latest %}
+                                {{ 'Yes' if latest.runningads_mentioned else 'No' }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>{% if latest %}{{ latest.priority|title }}{% else %}-{% endif %}</td>
+                        <td>{% if latest %}{{ latest.status|replace('_', ' ')|title }}{% else %}-{% endif %}</td>
+                        <td>{% if latest and latest.action_needed %}{{ latest.action_needed }}{% else %}-{% endif %}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="simple-grid">
+    <div class="panel">
+        <h2>Latest checks</h2>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Checked</th>
+                    <th>Platform</th>
+                    <th>Prompt</th>
+                    <th>Mentioned</th>
+                    <th>Competitors</th>
+                    <th>Sources</th>
+                    <th>Summary</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in tracker.latest_checks %}
+                    <tr>
+                        <td>{{ row.checked_at }}</td>
+                        <td>{{ row.platform }}</td>
+                        <td>{{ row.prompt }}</td>
+                        <td>{{ 'Yes' if row.runningads_mentioned else 'No' }}</td>
+                        <td>{{ row.competitors_mentioned|truncate(120, True) }}</td>
+                        <td>{{ row.source_urls|truncate(120, True) }}</td>
+                        <td>{{ row.answer_summary|truncate(160, True) }}</td>
+                        <td>{{ row.action_needed or '-' }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="8"><span class="muted">No manual checks recorded yet.</span></td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
