@@ -23,18 +23,18 @@
 {% endblock %}
 
 {% block content %}
-<main class="page authority-page authority-{{ page.slug }}">
+<main class="page authority-page comparison-page comparison-{{ page.slug }}">
     <nav class="simple-grid" aria-label="Breadcrumb">
         <div class="panel seo-breadcrumb-panel">
             <a class="brand-link" href="{{ url_for('index') }}">Home</a>
             <span class="muted"> &gt; </span>
-            <span>{{ page.breadcrumb_group }}</span>
+            <span>Comparisons</span>
             <span class="muted"> &gt; </span>
             <span>{{ page.label }}</span>
         </div>
     </nav>
 
-    <section class="hero authority-hero">
+    <section class="hero authority-hero comparison-hero">
         <div class="hero-grid">
             <div class="hero-left">
                 <div class="pill">{{ page.eyebrow }}</div>
@@ -49,13 +49,11 @@
             </div>
 
             <div class="hero-right">
-                <div class="hero-visual-card authority-visual-card">
+                <div class="hero-visual-card authority-visual-card comparison-visual-card">
                     <div class="visual-pill">{{ page.visual_pill }}</div>
                     <div class="visual-brand">{{ page.visual_brand }}</div>
                     <div class="visual-running">{{ page.visual_signal }}</div>
-                    <div class="visual-copy">
-                        {{ page.visual_copy }}
-                    </div>
+                    <div class="visual-copy">{{ page.visual_copy }}</div>
                     <div class="visual-bars">
                         <div class="bar bar-1"></div>
                         <div class="bar bar-2"></div>
@@ -68,34 +66,65 @@
 
     <section class="simple-grid three-col authority-section-grid">
         {% for section in page.sections %}
-            <article class="panel">
+            <article class="panel comparison-section-card">
                 <div class="pill">{{ "%02d"|format(loop.index) }}</div>
                 <h2>{{ section.title }}</h2>
                 <p class="muted">{{ section.body }}</p>
+                {% if section["items"] %}
+                    <ul class="comparison-list">
+                        {% for item in section["items"] %}
+                            <li>{{ item }}</li>
+                        {% endfor %}
+                    </ul>
+                {% endif %}
             </article>
         {% endfor %}
     </section>
 
+    {% if page.comparison_rows %}
+        <section class="simple-grid authority-section-grid">
+            <div class="panel comparison-table-panel">
+                <div class="pill">Practical comparison</div>
+                <h2>How to think about the options</h2>
+                <div class="comparison-table-wrap">
+                    <table class="table comparison-table">
+                        <tbody>
+                            {% for row in page.comparison_rows %}
+                                <tr>
+                                    {% for cell in row %}
+                                        {% if loop.index == 1 %}
+                                            <th scope="row">{{ cell }}</th>
+                                        {% else %}
+                                            <td>{{ cell }}</td>
+                                        {% endif %}
+                                    {% endfor %}
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    {% endif %}
+
     <section class="simple-grid two-col authority-section-grid">
         <div class="panel">
-            <div class="pill">Useful next steps</div>
-            <h2>Continue researching</h2>
-            <p class="muted">
-                Use these pages and examples to understand how RunningAds fits into practical competitor ad research.
-            </p>
+            <div class="pill">Learn more</div>
+            <h2>Related RunningAds pages</h2>
             <div class="brand-link-grid authority-link-grid">
-                <a class="brand-link" href="{{ url_for('sample_results') }}">View sample ad research</a>
-                <a class="brand-link" href="{{ url_for('pricing') }}">View pricing</a>
-                <a class="brand-link" href="{{ url_for('register') }}">Create an account</a>
+                {% for authority in authority_links %}
+                    <a class="brand-link" href="{{ authority.route }}">{{ authority.label }}</a>
+                {% endfor %}
+                <a class="brand-link" href="{{ url_for('sample_results') }}">Sample results</a>
             </div>
         </div>
 
         <div class="panel">
-            <div class="pill">Related pages</div>
-            <h2>More about RunningAds</h2>
+            <div class="pill">Compare more</div>
+            <h2>Other comparison pages</h2>
             <div class="brand-link-grid authority-link-grid">
-                {% for related in related_pages %}
-                    <a class="brand-link" href="{{ related.route }}">{{ related.label }}</a>
+                {% for comparison in comparison_pages %}
+                    <a class="brand-link" href="{{ comparison.route }}">{{ comparison.label }}</a>
                 {% endfor %}
             </div>
         </div>
@@ -104,31 +133,14 @@
     {% if brand_links %}
         <section class="simple-grid authority-section-grid">
             <div class="panel">
-                <div class="pill">Brand examples</div>
-                <h2>Explore public brand research pages</h2>
+                <div class="pill">Brand research examples</div>
+                <h2>Explore public brand pages</h2>
                 <p class="muted">
-                    These public SEO pages show how RunningAds organizes brand-specific ad research and cached previews where available.
+                    These pages show how RunningAds organizes brand-specific competitor ad research and cached examples where available.
                 </p>
                 <div class="brand-link-grid authority-brand-grid">
                     {% for brand in brand_links %}
                         <a class="brand-link" href="{{ url_for('brand_page', brand_slug=brand.slug) }}">{{ brand.name }} ads</a>
-                    {% endfor %}
-                </div>
-            </div>
-        </section>
-    {% endif %}
-
-    {% if comparison_pages %}
-        <section class="simple-grid authority-section-grid">
-            <div class="panel">
-                <div class="pill">Comparison guides</div>
-                <h2>Compare competitor ad research workflows</h2>
-                <p class="muted">
-                    These guides explain where RunningAds fits beside Meta Ads Library, ad research tools, and long-running ad workflows.
-                </p>
-                <div class="brand-link-grid authority-brand-grid">
-                    {% for comparison in comparison_pages %}
-                        <a class="brand-link" href="{{ comparison.route }}">{{ comparison.label }}</a>
                     {% endfor %}
                 </div>
             </div>

@@ -496,6 +496,306 @@ AUTHORITY_PAGES = {
     },
 }
 
+COMPARISON_PAGES = {
+    "runningads-vs-meta-ads-library": {
+        "route": "/runningads-vs-meta-ads-library",
+        "label": "RunningAds vs Meta Ads Library",
+        "title": "RunningAds vs Meta Ads Library - Competitor Meta Ads Research",
+        "meta_description": (
+            "Compare RunningAds and Meta Ads Library for competitor Meta ads research. Learn when to use the official library and when a focused long-running ad workflow helps."
+        ),
+        "eyebrow": "Comparison",
+        "headline": "RunningAds vs Meta Ads Library",
+        "summary": (
+            "Meta Ads Library is useful and official. RunningAds is a focused research workflow for marketers who want to find active Meta ads, review duration, and study examples that may be worth a closer look."
+        ),
+        "visual_pill": "Neutral comparison",
+        "visual_brand": "Official library + workflow",
+        "visual_signal": "Different jobs",
+        "visual_copy": "Use Meta Ads Library for broad official lookup. Use RunningAds when you want a faster research pass around active ads and duration.",
+        "sections": [
+            {
+                "title": "What Meta Ads Library is useful for",
+                "body": (
+                    "Meta Ads Library is the official place to search ads across Meta. It is useful for checking whether an advertiser is running ads, reviewing public ad examples, and doing direct manual research."
+                ),
+                "items": [
+                    "Official public ad lookup from Meta",
+                    "Useful for broad advertiser checks",
+                    "Helpful when you want to inspect ads manually",
+                ],
+            },
+            {
+                "title": "What RunningAds is built for",
+                "body": (
+                    "RunningAds is built for a narrower marketer workflow: search a competitor, focus on active ads, and use how long ads have been running as one signal for deciding what to study first."
+                ),
+                "items": [
+                    "Competitor Meta ads research",
+                    "Long-running ad discovery",
+                    "Creative, hook, offer, and message review",
+                ],
+            },
+            {
+                "title": "The practical difference",
+                "body": (
+                    "RunningAds does not replace every Meta Ads Library feature. It gives marketers a focused way to move from a brand name to research examples faster, especially when they care about active ads that have stayed live."
+                ),
+                "items": [
+                    "Less manual sorting",
+                    "More emphasis on duration as a research signal",
+                    "Built around marketing research workflows",
+                ],
+            },
+        ],
+        "comparison_rows": [
+            ["Primary role", "Official public ad library", "Focused competitor ad research workflow"],
+            ["Best for", "Manual advertiser lookup", "Finding active ads worth studying"],
+            ["Duration focus", "Manual review may be needed", "Duration is central to the workflow"],
+            ["Positioning", "Broad official source", "Practical research layer for marketers"],
+        ],
+        "faqs": [
+            {
+                "question": "Is RunningAds an alternative to Meta Ads Library?",
+                "answer": "RunningAds can be used as a focused alternative workflow for competitor ad research, but it does not replace every Meta Ads Library feature.",
+            },
+            {
+                "question": "Does RunningAds show active Meta ads?",
+                "answer": "RunningAds helps users research active Facebook, Instagram, and Meta ads from competitors and similar brands.",
+            },
+            {
+                "question": "Are long-running ads always profitable?",
+                "answer": "No. Ad duration is a research signal, not proof of profitability or performance.",
+            },
+        ],
+        "authority_slugs": ["about-runningads", "why-runningads", "runningads-for-agencies"],
+        "brand_slugs": ["nike", "adidas", "hubspot"],
+    },
+    "best-meta-ads-library-alternatives": {
+        "route": "/best-meta-ads-library-alternatives",
+        "label": "Meta Ads Library alternatives",
+        "title": "Best Meta Ads Library Alternatives to Consider",
+        "meta_description": (
+            "A practical guide to Meta Ads Library alternatives and complements, including RunningAds and common ad research tool categories."
+        ),
+        "eyebrow": "Alternatives",
+        "headline": "Meta Ads Library alternatives and complements to consider",
+        "summary": (
+            "People searching for Meta Ads Library alternatives usually want a faster way to research competitor ads, compare creatives, and find useful examples. This page frames options to consider without claiming one tool is objectively best for every team."
+        ),
+        "visual_pill": "Options to consider",
+        "visual_brand": "Ad research stack",
+        "visual_signal": "Choose by workflow",
+        "visual_copy": "The right tool depends on whether you need official lookup, ecommerce inspiration, long-running ad discovery, or broader ad intelligence.",
+        "sections": [
+            {
+                "title": "What people usually want from an alternative",
+                "body": (
+                    "Marketers often want less manual review, clearer creative examples, easier competitor checks, or a workflow that fits ecommerce, agency, or SaaS research."
+                ),
+                "items": [
+                    "Faster competitor checks",
+                    "Creative inspiration and pattern discovery",
+                    "A clearer way to prioritize ads for review",
+                ],
+            },
+            {
+                "title": "RunningAds",
+                "body": (
+                    "RunningAds is a practical option for competitor Meta ads research when you care about active ads and duration. It is built around finding ads that have stayed live long enough to be useful research candidates."
+                ),
+                "items": [
+                    "Focused on active Meta ads",
+                    "Uses duration as a research signal",
+                    "Useful for agencies, ecommerce teams, and performance marketers",
+                ],
+            },
+            {
+                "title": "Other ad research tool categories",
+                "body": (
+                    "Tools such as BigSpy, Minea, AdSpy, PipiAds, and other ad intelligence products are often considered in the ad spy or ad research category. Each tool may emphasize different networks, datasets, workflows, or ecommerce use cases."
+                ),
+                "items": [
+                    "Broad ad spy and ad intelligence tools",
+                    "Ecommerce creative research tools",
+                    "Manual official lookup through Meta Ads Library",
+                ],
+            },
+        ],
+        "comparison_rows": [
+            ["Option type", "Typical use", "What to check before choosing"],
+            ["Meta Ads Library", "Official manual ad lookup", "How much manual sorting your team can handle"],
+            ["RunningAds", "Long-running Meta ad research", "Whether duration-focused research fits your workflow"],
+            ["Ad spy tools", "Broader ad intelligence research", "Networks, data freshness, pricing, and allowed use cases"],
+        ],
+        "faqs": [
+            {
+                "question": "What is a Meta Ads Library alternative?",
+                "answer": "It is a tool or workflow used to research ads outside of manually browsing Meta Ads Library.",
+            },
+            {
+                "question": "Is RunningAds listed as the only option?",
+                "answer": "No. RunningAds is one option for long-running Meta ad research, while other ad research tools may fit different workflows.",
+            },
+            {
+                "question": "Should marketers copy competitor ads?",
+                "answer": "No. Competitor ads should be used for research and inspiration, not direct copying.",
+            },
+        ],
+        "authority_slugs": ["about-runningads", "why-runningads", "runningads-for-ecommerce-marketers"],
+        "brand_slugs": ["gymshark", "manscaped", "shopify"],
+    },
+    "best-competitor-meta-ads-research-tools": {
+        "route": "/best-competitor-meta-ads-research-tools",
+        "label": "Competitor Meta ads tools",
+        "title": "Best Competitor Meta Ads Research Tools to Consider",
+        "meta_description": (
+            "A practical guide to competitor Meta ads research tools and workflows for manual research, long-running ad discovery, ecommerce research, and agency work."
+        ),
+        "eyebrow": "Research tools",
+        "headline": "Competitor Meta ads research tools by workflow",
+        "summary": (
+            "The most useful competitor ad research setup depends on the job. Some teams need official manual lookup, some need ecommerce inspiration, and some need a faster way to find active ads that have stayed live."
+        ),
+        "visual_pill": "Workflow map",
+        "visual_brand": "Research jobs",
+        "visual_signal": "Tools by task",
+        "visual_copy": "Start with the research job, then choose the tool that makes that job faster and clearer.",
+        "sections": [
+            {
+                "title": "Manual research",
+                "body": (
+                    "Manual research works when you need direct inspection and have time to review many examples yourself. Meta Ads Library is often the starting point for this kind of work."
+                ),
+                "items": [
+                    "Direct advertiser checks",
+                    "Manual ad review",
+                    "Useful for one-off validation",
+                ],
+            },
+            {
+                "title": "Long-running ad discovery",
+                "body": (
+                    "RunningAds fits the workflow where a marketer wants to start with active ads and prioritize examples that have stayed live for days or weeks."
+                ),
+                "items": [
+                    "Competitor research before campaign planning",
+                    "Creative inspiration and message review",
+                    "Duration-based prioritization",
+                ],
+            },
+            {
+                "title": "Agency and ecommerce workflows",
+                "body": (
+                    "Agencies may use competitor ad research before client meetings. Ecommerce teams may use it before creative production to review category hooks, offers, and product messaging."
+                ),
+                "items": [
+                    "Client onboarding and strategy discussion",
+                    "Category and offer research",
+                    "Creative brief preparation",
+                ],
+            },
+        ],
+        "comparison_rows": [
+            ["Research job", "Useful workflow", "RunningAds fit"],
+            ["Competitor lookup", "Search the advertiser and review examples", "Good for active Meta ad examples"],
+            ["Creative planning", "Study hooks, offers, and message patterns", "Good for finding examples to discuss"],
+            ["Ongoing monitoring", "Check what competitors keep live", "Good for duration-focused review"],
+        ],
+        "faqs": [
+            {
+                "question": "Can I use RunningAds for competitor Facebook ad research?",
+                "answer": "Yes. RunningAds is built for competitor Meta ads research, including Facebook and Instagram ads.",
+            },
+            {
+                "question": "What is the difference between RunningAds and an ad spy tool?",
+                "answer": "RunningAds is a focused competitor Meta ads research workflow centered on active ads and duration, while broader ad spy tools may cover different datasets or networks.",
+            },
+            {
+                "question": "Can agencies use RunningAds for client research?",
+                "answer": "Yes. Agencies can use RunningAds to prepare competitor examples for onboarding, creative review, and strategy discussions.",
+            },
+        ],
+        "authority_slugs": ["runningads-for-agencies", "runningads-for-ecommerce-marketers", "about-runningads"],
+        "brand_slugs": ["hubspot", "monday", "adidas"],
+    },
+    "tools-to-find-long-running-facebook-ads": {
+        "route": "/tools-to-find-long-running-facebook-ads",
+        "label": "Long-running Facebook ads tools",
+        "title": "Tools to Find Long-Running Facebook Ads",
+        "meta_description": (
+            "Learn what long-running Facebook ads are, why ad duration can be useful for research, and how RunningAds helps marketers find active Meta ads to study."
+        ),
+        "eyebrow": "Long-running ads",
+        "headline": "How to find long-running Facebook ads",
+        "summary": (
+            "Long-running Facebook and Meta ads are ads that stay active for days or weeks. They can be useful research signals because they may show which messages, hooks, offers, and formats advertisers keep testing or investing in."
+        ),
+        "visual_pill": "Duration signal",
+        "visual_brand": "Active ads",
+        "visual_signal": "Days live",
+        "visual_copy": "Duration helps prioritize what to inspect, but it does not prove profitability.",
+        "sections": [
+            {
+                "title": "What long-running ads are",
+                "body": (
+                    "A long-running ad is an active ad that has stayed live over time. Marketers often look at these ads because duration can make an example more interesting than a short-lived test."
+                ),
+                "items": [
+                    "Active Facebook, Instagram, or Meta ads",
+                    "Ads that have stayed live for days or weeks",
+                    "Examples that may be worth deeper creative review",
+                ],
+            },
+            {
+                "title": "Why duration can matter",
+                "body": (
+                    "Advertisers often pause weak ads faster than ads they still want to test. That makes duration a practical research signal, especially when combined with creative, offer, copy, and category context."
+                ),
+                "items": [
+                    "Useful for prioritizing examples",
+                    "Helpful for spotting repeated messaging",
+                    "Best used with human judgment",
+                ],
+            },
+            {
+                "title": "How RunningAds helps",
+                "body": (
+                    "RunningAds helps marketers search competitors and review active Meta ads with duration in mind. It is designed to support creative research, not to guarantee outcomes."
+                ),
+                "items": [
+                    "Search by brand or competitor",
+                    "Review active ads and duration",
+                    "Use examples for research and inspiration",
+                ],
+            },
+        ],
+        "comparison_rows": [
+            ["Step", "What to do", "Why it helps"],
+            ["1", "Search a competitor", "Start from a relevant brand or category"],
+            ["2", "Review active ads", "Focus on examples still in market"],
+            ["3", "Compare duration and creative", "Prioritize patterns worth discussing"],
+            ["4", "Use as inspiration", "Inform original briefs and tests"],
+        ],
+        "faqs": [
+            {
+                "question": "How can I see how long a Facebook ad has been running?",
+                "answer": "RunningAds helps surface active Meta ads and show duration signals where available.",
+            },
+            {
+                "question": "Are long-running Facebook ads always profitable?",
+                "answer": "No. Long-running ads can be useful research signals, but duration does not prove profitability.",
+            },
+            {
+                "question": "Can ecommerce marketers use RunningAds for creative research?",
+                "answer": "Yes. Ecommerce marketers can use RunningAds to research hooks, offers, product messaging, and creative patterns.",
+            },
+        ],
+        "authority_slugs": ["why-runningads", "runningads-for-ecommerce-marketers", "about-runningads"],
+        "brand_slugs": ["gymshark", "adidas", "manscaped"],
+    },
+}
+
 PLAN_LIMITS = {
     "basic": {"monthly": 40, "daily": 5},
     "pro": {"monthly": 90, "daily": 15},
@@ -8445,6 +8745,15 @@ def get_authority_page(slug: str):
     return page
 
 
+def get_comparison_page(slug: str):
+    page = COMPARISON_PAGES.get(slug)
+    if not page:
+        return None
+    page = dict(page)
+    page["slug"] = slug
+    return page
+
+
 def get_authority_related_pages(page):
     related_pages = []
     for related_slug in page.get("related_slugs") or []:
@@ -8452,6 +8761,24 @@ def get_authority_related_pages(page):
         if related:
             related_pages.append(related)
     return related_pages
+
+
+def get_featured_comparison_pages(limit: int = 4):
+    pages = []
+    for slug in COMPARISON_PAGES:
+        page = get_comparison_page(slug)
+        if page:
+            pages.append(page)
+    return pages[:limit]
+
+
+def get_comparison_authority_links(page):
+    authority_links = []
+    for authority_slug in page.get("authority_slugs") or []:
+        authority = get_authority_page(authority_slug)
+        if authority:
+            authority_links.append(authority)
+    return authority_links
 
 
 def get_authority_brand_links(page):
@@ -8593,6 +8920,94 @@ def build_authority_structured_data(page, canonical_url: str):
     ]
 
 
+def build_comparison_structured_data(page, canonical_url: str):
+    breadcrumb_schema = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "@id": f"{canonical_url}#breadcrumb",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Home",
+                "item": absolute_url("/"),
+            },
+            {
+                "@type": "ListItem",
+                "position": 2,
+                "name": "Comparisons",
+                "item": canonical_url,
+            },
+            {
+                "@type": "ListItem",
+                "position": 3,
+                "name": page["label"],
+                "item": canonical_url,
+            },
+        ],
+    }
+    webpage_schema = {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        "@id": f"{canonical_url}#webpage",
+        "name": page["title"],
+        "headline": page["headline"],
+        "description": page["meta_description"],
+        "url": canonical_url,
+        "isPartOf": {
+            "@type": "WebSite",
+            "name": "RunningAds",
+            "url": absolute_url("/"),
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "NivdoX AI",
+            "url": absolute_url("/"),
+        },
+        "breadcrumb": {
+            "@id": f"{canonical_url}#breadcrumb",
+        },
+    }
+    faq_schema = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "@id": f"{canonical_url}#faq",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": faq["question"],
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": faq["answer"],
+                },
+            }
+            for faq in page.get("faqs", [])
+        ],
+    }
+    software_schema = {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "@id": f"{absolute_url('/')}#software",
+        "name": "RunningAds",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+        "url": absolute_url("/"),
+        "description": (
+            "RunningAds is a SaaS tool for competitor Meta ads research. It helps marketers find active Facebook, Instagram, and Meta ads that have been running for days or weeks."
+        ),
+        "publisher": {
+            "@type": "Organization",
+            "name": "NivdoX AI",
+        },
+    }
+    return [
+        json.dumps(webpage_schema),
+        json.dumps(breadcrumb_schema),
+        json.dumps(faq_schema),
+        json.dumps(software_schema),
+    ]
+
+
 def render_authority_page(slug: str):
     page = get_authority_page(slug)
     if not page:
@@ -8603,9 +9018,32 @@ def render_authority_page(slug: str):
         "authority_page.html",
         page=page,
         related_pages=get_authority_related_pages(page),
+        comparison_pages=get_featured_comparison_pages(),
         brand_links=get_authority_brand_links(page),
         canonical_url=canonical_url,
         structured_data_json=build_authority_structured_data(page, canonical_url),
+        seo_public_page=True,
+    )
+
+
+def render_comparison_page(slug: str):
+    page = get_comparison_page(slug)
+    if not page:
+        abort(404)
+
+    canonical_url = absolute_url(page["route"])
+    return render_template(
+        "comparison_page.html",
+        page=page,
+        authority_links=get_comparison_authority_links(page),
+        brand_links=get_authority_brand_links(page),
+        comparison_pages=[
+            related
+            for related in get_featured_comparison_pages()
+            if related["slug"] != page["slug"]
+        ],
+        canonical_url=canonical_url,
+        structured_data_json=build_comparison_structured_data(page, canonical_url),
         seo_public_page=True,
     )
 
@@ -8633,6 +9071,26 @@ def runningads_for_agencies():
 @app.route("/runningads-for-ecommerce-marketers")
 def runningads_for_ecommerce_marketers():
     return render_authority_page("runningads-for-ecommerce-marketers")
+
+
+@app.route("/runningads-vs-meta-ads-library")
+def runningads_vs_meta_ads_library():
+    return render_comparison_page("runningads-vs-meta-ads-library")
+
+
+@app.route("/best-meta-ads-library-alternatives")
+def best_meta_ads_library_alternatives():
+    return render_comparison_page("best-meta-ads-library-alternatives")
+
+
+@app.route("/best-competitor-meta-ads-research-tools")
+def best_competitor_meta_ads_research_tools():
+    return render_comparison_page("best-competitor-meta-ads-research-tools")
+
+
+@app.route("/tools-to-find-long-running-facebook-ads")
+def tools_to_find_long_running_facebook_ads():
+    return render_comparison_page("tools-to-find-long-running-facebook-ads")
 
 
 def build_brand_structured_data(brand, canonical_url: str):
@@ -8782,6 +9240,15 @@ def sitemap_xml():
     ]
 
     for page in AUTHORITY_PAGES.values():
+        pages.append(
+            {
+                "loc": absolute_url(page["route"]),
+                "priority": "0.6",
+                "changefreq": "monthly",
+            }
+        )
+
+    for page in COMPARISON_PAGES.values():
         pages.append(
             {
                 "loc": absolute_url(page["route"]),
