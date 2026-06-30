@@ -1135,6 +1135,98 @@ body {
     font-weight: 600;
 }
 
+.footer {
+    padding: 26px 0 30px;
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    color: #dbeafe;
+}
+
+.footer-intro {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding-bottom: 20px;
+    margin-bottom: 22px;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.footer-brand {
+    color: #ffffff;
+    font-size: 20px;
+    line-height: 1.1;
+    font-weight: 900;
+}
+
+.footer-note {
+    color: #cbd5e1;
+    font-size: 15px;
+    line-height: 1.45;
+    font-weight: 650;
+}
+
+.footer-contact {
+    color: #a5f3fc;
+    font-size: 15px;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.footer-links {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 22px;
+    text-align: left;
+}
+
+.footer-group {
+    display: grid;
+    align-content: start;
+    gap: 9px;
+}
+
+.footer-group h2 {
+    margin: 0 0 4px;
+    color: #ffffff;
+    font-size: 13px;
+    line-height: 1.2;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.footer a {
+    color: #bfdbfe;
+    font-size: 15px;
+    line-height: 1.35;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.footer a:hover {
+    color: #67e8f9;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 4px;
+}
+
+.footer a:focus-visible {
+    outline: 3px solid rgba(34, 211, 238, 0.7);
+    outline-offset: 4px;
+    border-radius: 8px;
+}
+
+.footer-bottom {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1px solid rgba(148, 163, 184, 0.12);
+    color: #cbd5e1;
+    font-size: 14px;
+    font-weight: 700;
+    text-align: center;
+}
+
 @keyframes spin {
     from {
         transform: rotate(0deg);
@@ -1209,6 +1301,33 @@ body {
     .results-header {
         flex-direction: column;
         align-items: flex-start;
+    }
+
+    .footer {
+        width: min(100% - 24px, 1320px);
+        padding-bottom: 28px;
+    }
+
+    .footer-intro {
+        display: grid;
+        gap: 8px;
+        align-items: start;
+    }
+
+    .footer-links {
+        grid-template-columns: 1fr;
+        gap: 18px;
+    }
+
+    .footer-group {
+        gap: 8px;
+    }
+
+    .footer a {
+        display: inline-flex;
+        min-height: 34px;
+        align-items: center;
+        font-size: 16px;
     }
 
     .running-text {

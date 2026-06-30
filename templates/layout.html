@@ -169,12 +169,6 @@
         .footer {
             width: min(1320px, calc(100% - 40px));
             margin: 40px auto 24px;
-            padding-top: 18px;
-            border-top: 1px solid rgba(148, 163, 184, 0.14);
-            color: #cbd5e1;
-            display: grid;
-            gap: 6px;
-            text-align: center;
         }
         .table {
             width: 100%;
@@ -292,21 +286,50 @@
 
     {% block content %}{% endblock %}
 
-    <footer class="footer">
-        <div>contact@nivdox.com</div>
-        <div>Feedback? Tell us what’s missing.</div>
-        <div>
-        <a href="/about-runningads">About RunningAds</a> |
-        <a href="/why-runningads">Why RunningAds</a> |
-        <a href="/runningads-for-agencies">For agencies</a> |
-        <a href="/runningads-for-ecommerce-marketers">For ecommerce</a> |
-        <a href="/founder">Founder</a>
+    <footer class="footer" aria-label="RunningAds footer">
+        <div class="footer-intro">
+            <div class="footer-brand">RunningAds</div>
+            <div class="footer-note">Competitor Meta ads research by NivdoX AI.</div>
+            <a class="footer-contact" href="mailto:contact@nivdox.com">contact@nivdox.com</a>
         </div>
-        <div>
-        <a href="/privacy" target="_blank" rel="noopener noreferrer">Privacy Policy</a> |
-        <a href="/terms" target="_blank" rel="noopener noreferrer">Terms of Service</a>
-        </div>
-        <div>© {{ year_now }} NivdoX AI</div>
+
+        <nav class="footer-links" aria-label="Footer links">
+            <div class="footer-group">
+                <h2>Product</h2>
+                <a href="{{ url_for('index') }}">Search ads</a>
+                <a href="{{ url_for('sample_results') }}">Sample results</a>
+                <a href="{{ url_for('pricing') }}">Pricing</a>
+            </div>
+
+            <div class="footer-group">
+                <h2>Company</h2>
+                <a href="/about-runningads">About RunningAds</a>
+                <a href="/why-runningads">Why RunningAds</a>
+                <a href="/founder">Founder</a>
+            </div>
+
+            <div class="footer-group">
+                <h2>Use cases</h2>
+                <a href="/runningads-for-agencies">For agencies</a>
+                <a href="/runningads-for-ecommerce-marketers">For ecommerce</a>
+            </div>
+
+            <div class="footer-group">
+                <h2>Research</h2>
+                <a href="/runningads-vs-meta-ads-library">RunningAds vs Meta Ads Library</a>
+                <a href="/best-meta-ads-library-alternatives">Meta Ads Library alternatives</a>
+                <a href="/best-competitor-meta-ads-research-tools">Competitor Meta ads tools</a>
+                <a href="/tools-to-find-long-running-facebook-ads">Long running Facebook ads tools</a>
+            </div>
+
+            <div class="footer-group">
+                <h2>Legal</h2>
+                <a href="/privacy">Privacy Policy</a>
+                <a href="/terms">Terms of Service</a>
+            </div>
+        </nav>
+
+        <div class="footer-bottom">© {{ year_now }} NivdoX AI</div>
     </footer>
 
     {% block scripts %}{% endblock %}
