@@ -42,9 +42,15 @@
                 <p class="hero-subtext">{{ page.summary }}</p>
 
                 <div class="seo-cta-row">
-                    <a class="topbar-btn primary" href="{{ url_for('sample_results') }}">See sample results</a>
-                    <a class="topbar-btn" href="{{ url_for('pricing') }}">View pricing</a>
-                    <a class="topbar-btn" href="{{ url_for('register') }}">Create account</a>
+                    {% if page.hero_ctas %}
+                        {% for cta in page.hero_ctas %}
+                            <a class="topbar-btn {% if loop.first %}primary{% endif %}" href="{{ cta.href }}">{{ cta.label }}</a>
+                        {% endfor %}
+                    {% else %}
+                        <a class="topbar-btn primary" href="{{ url_for('sample_results') }}">See sample results</a>
+                        <a class="topbar-btn" href="{{ url_for('pricing') }}">View pricing</a>
+                        <a class="topbar-btn" href="{{ url_for('register') }}">Create account</a>
+                    {% endif %}
                 </div>
             </div>
 
@@ -107,15 +113,57 @@
         </section>
     {% endif %}
 
+    {% if page.workflow_steps %}
+        <section class="simple-grid authority-section-grid">
+            <div class="panel comparison-table-panel">
+                <div class="pill">{{ page.workflow_label or 'Workflow' }}</div>
+                <h2>{{ page.workflow_title }}</h2>
+                <p class="muted">{{ page.workflow_intro }}</p>
+                <div class="comparison-table-wrap">
+                    <table class="table comparison-table">
+                        <tbody>
+                            {% for step in page.workflow_steps %}
+                                <tr>
+                                    <th scope="row">{{ loop.index }}</th>
+                                    <td>{{ step }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    {% endif %}
+
+    {% if page.insight_block %}
+        <section class="simple-grid authority-section-grid">
+            <div class="panel">
+                <div class="pill">{{ page.insight_block.pill }}</div>
+                <h2>{{ page.insight_block.title }}</h2>
+                <p class="muted">{{ page.insight_block.body }}</p>
+            </div>
+        </section>
+    {% endif %}
+
     <section class="simple-grid two-col authority-section-grid">
         <div class="panel">
             <div class="pill">Learn more</div>
             <h2>Related RunningAds pages</h2>
             <div class="brand-link-grid authority-link-grid">
+                {% if page.extra_links %}
+                    <a class="brand-link" href="{{ url_for('index') }}">Search competitor ads</a>
+                    <a class="brand-link" href="{{ url_for('sample_results') }}">See sample results</a>
+                    <a class="brand-link" href="{{ url_for('pricing') }}">View pricing</a>
+                {% endif %}
                 {% for authority in authority_links %}
                     <a class="brand-link" href="{{ authority.route }}">{{ authority.label }}</a>
                 {% endfor %}
-                <a class="brand-link" href="{{ url_for('sample_results') }}">Sample results</a>
+                {% for extra_link in page.extra_links or [] %}
+                    <a class="brand-link" href="{{ extra_link.href }}">{{ extra_link.label }}</a>
+                {% endfor %}
+                {% if not page.extra_links %}
+                    <a class="brand-link" href="{{ url_for('sample_results') }}">Sample results</a>
+                {% endif %}
             </div>
         </div>
 

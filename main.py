@@ -832,6 +832,187 @@ COMPARISON_PAGES = {
         "authority_slugs": ["runningads-for-agencies", "runningads-for-ecommerce-marketers", "about-runningads"],
         "brand_slugs": ["hubspot", "monday", "adidas"],
     },
+    "facebook-ads-competitor-analysis-tools": {
+        "route": "/facebook-ads-competitor-analysis-tools",
+        "label": "Facebook ads competitor tools",
+        "title": "Facebook Ads Competitor Analysis Tools | RunningAds",
+        "meta_description": (
+            "Compare tools for researching competitor Facebook and Meta ads. Learn how Meta Ads Library, BigSpy, Minea, Foreplay, AdSpy and RunningAds fit into a practical ad research workflow."
+        ),
+        "eyebrow": "Competitor research",
+        "headline": "Facebook Ads Competitor Analysis Tools",
+        "summary": (
+            "Marketers do not just need more ads. They need a faster way to decide which competitor ads are worth studying, which hooks keep appearing, and which offers deserve a closer look."
+        ),
+        "visual_pill": "BOFU guide",
+        "visual_brand": "Competitor ad research",
+        "visual_signal": "Duration-first review",
+        "visual_copy": (
+            "RunningAds is the fastest way to find long-running competitor Meta ads using ad duration as a research signal."
+        ),
+        "hero_ctas": [
+            {"label": "Search ads", "href": "/"},
+            {"label": "See sample results", "href": "/sample-results"},
+            {"label": "View pricing", "href": "/pricing"},
+        ],
+        "sections": [
+            {
+                "title": "What is a Facebook ads competitor analysis tool?",
+                "body": (
+                    "A Facebook ads competitor analysis tool helps marketers find competitor ads, study active campaigns, identify creative angles, review offers and hooks, and spot ads that may have stayed live for a reason."
+                ),
+                "items": [
+                    "Find competitor Facebook, Instagram, and Meta ads",
+                    "Review active campaigns, hooks, offers, and visual patterns",
+                    "Prioritize examples that deserve deeper human review",
+                ],
+            },
+            {
+                "title": "Where RunningAds fits",
+                "body": (
+                    "RunningAds focuses on active Meta ads and highlights ads that have been running for several days or longer. It uses ad duration as a first-pass research signal so marketers can quickly decide what is worth studying."
+                ),
+                "items": [
+                    "Long-running hooks and repeated visual patterns",
+                    "Offer framing, landing page angles, and message positioning",
+                    "Creative concepts competitors appear to keep investing in",
+                ],
+            },
+            {
+                "title": "How to compare the broader tool category",
+                "body": (
+                    "RunningAds is not positioned as a replacement for every ad spy tool. Other tools may be broader creative libraries, ecommerce spy tools, TikTok-focused tools, official lookup sources, or workflow platforms."
+                ),
+                "items": [
+                    "Choose by the research job, not by a generic ranking",
+                    "Check which networks, countries, and workflows matter to your team",
+                    "Use competitor ads for research and inspiration, not direct copying",
+                ],
+            },
+        ],
+        "comparison_rows": [
+            ["Tool", "Best for", "Strength", "Limitation", "Where RunningAds fits"],
+            [
+                "Meta Ads Library",
+                "Official public ad lookup",
+                "Direct access to Meta's public ads database",
+                "Manual review can be slow when comparing many examples",
+                "RunningAds adds a focused duration-first workflow for marketers",
+            ],
+            [
+                "BigSpy",
+                "Broad ad research and inspiration",
+                "Often considered by teams that want a wide ad research view",
+                "May be broader than a simple active Meta ads workflow",
+                "RunningAds is narrower and built around active ads worth reviewing",
+            ],
+            [
+                "Minea",
+                "Ecommerce and product ad research",
+                "Useful category fit for ecommerce-oriented creative research",
+                "May not be the simplest option for duration-based Meta ad review",
+                "RunningAds fits when the first question is which active Meta ads have stayed live",
+            ],
+            [
+                "Foreplay",
+                "Creative saving and team workflows",
+                "Helpful for organizing creative inspiration and ad examples",
+                "Workflow focus differs from fast competitor search",
+                "RunningAds can help find examples to review before saving or briefing",
+            ],
+            [
+                "AdSpy",
+                "Ad spy research",
+                "Known in the ad spy category",
+                "Broader spy workflows can require filtering for the specific research job",
+                "RunningAds focuses on a simpler active Meta ads research pass",
+            ],
+            [
+                "PowerAdSpy",
+                "Ad intelligence research",
+                "Broad category coverage for ad research use cases",
+                "May be more tool than needed for fast Meta duration checks",
+                "RunningAds fits lightweight competitor review around active ads",
+            ],
+            [
+                "Motion",
+                "Creative analytics and performance workflows",
+                "Useful for teams analyzing creative performance and production",
+                "Not the same job as public competitor ad discovery",
+                "RunningAds helps with the external research step before creative discussion",
+            ],
+            [
+                "MagicBrief",
+                "Creative workflow and briefing",
+                "Useful for organizing ideas and building creative briefs",
+                "Discovery and duration prioritization may be a separate need",
+                "RunningAds can supply active competitor examples for the brief process",
+            ],
+            [
+                "RunningAds",
+                "Fast active Meta ad research",
+                "Uses ad duration to help prioritize competitor ads worth studying",
+                "Not a guarantee that an ad is profitable and not a full replacement for every ad spy tool",
+                "Best when you want to quickly find active, long-running competitor Meta ads",
+            ],
+        ],
+        "workflow_label": "Practical workflow",
+        "workflow_title": "A simple competitor ad research workflow",
+        "workflow_intro": (
+            "A useful workflow keeps the research practical: start with a competitor, narrow down active ads, then study patterns without copying."
+        ),
+        "workflow_steps": [
+            "Start with a competitor or brand.",
+            "Find active ads.",
+            "Prioritize ads that have been running longer.",
+            "Review hooks, visuals, offers, and landing pages.",
+            "Save ideas for your own testing.",
+            "Do not copy directly.",
+        ],
+        "insight_block": {
+            "pill": "Internal visibility snapshot",
+            "title": "What AI search tools tend to mention",
+            "body": (
+                "In early internal visibility checks, tools such as BigSpy, Minea, Foreplay, AdSpy and Meta Ads Library are commonly surfaced for competitor ad research prompts. RunningAds is being built to occupy a more focused position: fast research into active, long-running Meta ads. This is an internal visibility snapshot, not a statistically valid market study."
+            ),
+        },
+        "extra_links": [
+            {"label": "RunningAds vs Meta Ads Library", "href": "/runningads-vs-meta-ads-library"},
+            {"label": "Meta Ads Library alternatives", "href": "/best-meta-ads-library-alternatives"},
+            {"label": "Competitor Meta ads tools", "href": "/best-competitor-meta-ads-research-tools"},
+            {"label": "Long-running Facebook ads tools", "href": "/tools-to-find-long-running-facebook-ads"},
+            {"label": "RunningAds for agencies", "href": "/runningads-for-agencies"},
+            {"label": "RunningAds for ecommerce marketers", "href": "/runningads-for-ecommerce-marketers"},
+        ],
+        "faqs": [
+            {
+                "question": "What is the best tool for Facebook ads competitor analysis?",
+                "answer": "There is no single best tool for every team. Meta Ads Library is useful for official manual lookup, broader ad spy tools may fit wider research needs, and RunningAds is useful when you want a fast way to find active Meta ads that have been running long enough to review.",
+            },
+            {
+                "question": "Can I use Meta Ads Library for competitor research?",
+                "answer": "Yes. Meta Ads Library is a useful official source for checking public ads. RunningAds is designed as a focused workflow when you want to prioritize active ads and duration faster.",
+            },
+            {
+                "question": "How is RunningAds different from Meta Ads Library?",
+                "answer": "RunningAds focuses on helping marketers search competitors and review active ads with duration in mind. Meta Ads Library is the broader official public ad lookup source.",
+            },
+            {
+                "question": "Does a long-running ad mean it is profitable?",
+                "answer": "No. Ad duration is a research signal, not proof of profitability, revenue, or performance. It simply helps decide which ads may be worth studying first.",
+            },
+            {
+                "question": "Should I copy competitor Facebook ads?",
+                "answer": "No. Competitor ads should be used for research and inspiration. The goal is to understand patterns, hooks, offers, and positioning so you can create original tests.",
+            },
+            {
+                "question": "What should I look for when analyzing competitor ads?",
+                "answer": "Look for hooks, visual patterns, offer framing, landing page angles, repeated messages, and whether similar creative concepts appear across multiple ads or over time.",
+            },
+        ],
+        "authority_slugs": ["runningads-for-agencies", "runningads-for-ecommerce-marketers", "about-runningads"],
+        "brand_slugs": ["hubspot", "shopify", "adidas"],
+    },
     "tools-to-find-long-running-facebook-ads": {
         "route": "/tools-to-find-long-running-facebook-ads",
         "label": "Long-running Facebook ads tools",
@@ -10249,6 +10430,11 @@ def best_meta_ads_library_alternatives():
 @app.route("/best-competitor-meta-ads-research-tools")
 def best_competitor_meta_ads_research_tools():
     return render_comparison_page("best-competitor-meta-ads-research-tools")
+
+
+@app.route("/facebook-ads-competitor-analysis-tools")
+def facebook_ads_competitor_analysis_tools():
+    return render_comparison_page("facebook-ads-competitor-analysis-tools")
 
 
 @app.route("/tools-to-find-long-running-facebook-ads")
