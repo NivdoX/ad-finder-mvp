@@ -174,37 +174,41 @@ AUTHORITY_PAGES = {
             "long-running Facebook and Instagram ads without using Meta Ads Library manually."
         ),
         "eyebrow": "About RunningAds",
-        "headline": "A practical way to research long-running Meta ads",
+        "headline": "What RunningAds is and how it helps ad research",
         "summary": (
-            "RunningAds is a SaaS tool for competitor Meta ads research. It helps marketers "
-            "find active Facebook and Instagram ads that have been running for days or weeks, "
-            "so they can study creative patterns, hooks, offers, and messaging with less manual work."
+            "RunningAds is a SaaS tool for competitor Meta ads research. It helps marketers find active "
+            "Facebook and Instagram ads, sort for ads that have stayed live, and study the creative patterns, "
+            "hooks, offers, and messaging competitors keep in market."
         ),
+        "visual_pill": "Product overview",
+        "visual_brand": "Meta ad research",
+        "visual_signal": "Faster first pass",
+        "visual_copy": "Search a brand, review active ads, and use duration as one research signal.",
         "schema_type": "SoftwareApplication",
         "breadcrumb_group": "Company",
         "sections": [
             {
-                "title": "What RunningAds does",
+                "title": "What the product does",
                 "body": (
-                    "RunningAds searches for active Meta ads and highlights ads that have stayed live "
-                    "longer. Long-running ads can be useful research signals because advertisers often "
-                    "pause weak ads faster than ads they still want to test or scale."
+                    "RunningAds searches active Meta ads and turns the first research pass into a simpler workflow. "
+                    "Instead of opening many ads manually, marketers can start from ads that are live now and compare "
+                    "their duration, creative, copy, and landing context."
                 ),
             },
             {
                 "title": "Who it is for",
                 "body": (
-                    "The product is built for performance marketers, paid social teams, ecommerce "
-                    "operators, SaaS marketers, agencies, and founders who want faster competitor ad "
-                    "research without turning research into a manual spreadsheet project."
+                    "The product is built for performance marketers, paid social teams, ecommerce operators, SaaS "
+                    "marketers, agencies, and founders who need competitor research before planning creative tests, "
+                    "client discussions, or category reviews."
                 ),
             },
             {
-                "title": "How it differs from manual Meta Ads Library research",
+                "title": "Different from manual browsing",
                 "body": (
-                    "Meta Ads Library is useful, but it can require repeated searches and manual review. "
-                    "RunningAds focuses the workflow around ads that are still active and have been live "
-                    "long enough to be worth studying."
+                    "Meta Ads Library is useful, but the manual workflow can be slow. RunningAds focuses on the "
+                    "marketer's research job: find the brand, review active examples, and quickly identify ads that "
+                    "may be more useful to study."
                 ),
             },
         ],
@@ -232,51 +236,78 @@ AUTHORITY_PAGES = {
     "founder": {
         "route": "/founder",
         "label": "Founder",
-        "title": "Founder - Ola Skodvin, NivDoX AI and RunningAds",
+        "title": "Founder - Ola Skodvin, NivdoX AI and RunningAds",
         "meta_description": (
-            "Meet Ola Skodvin, the founder building NivDoX AI and RunningAds as practical AI and software systems for automation and marketing research workflows."
+            "Meet Ola Skodvin, founder of NivdoX AI, based in Norway, and learn why he is building RunningAds as a practical competitor ad research system."
         ),
         "eyebrow": "Founder",
-        "headline": "Built by Ola Skodvin through NivDoX AI",
+        "headline": "I am building practical AI systems that can do useful work",
         "summary": (
-            "RunningAds is built by Ola Skodvin as part of NivDoX AI, a practical AI and software effort "
-            "focused on useful automation, marketing research, and workflow systems. The approach is simple: "
-            "build tools that reduce repetitive research and make decisions easier to inspect."
+            "I am Ola Skodvin, founder of NivdoX AI, based in Norway. I am building RunningAds because I want "
+            "practical AI and software systems that reduce repetitive work, make useful research easier, and can "
+            "operate without constant manual effort."
         ),
+        "visual_pill": "NivdoX AI",
+        "visual_brand": "Ola Skodvin",
+        "visual_signal": "Practical systems",
+        "visual_copy": "NivdoX AI builds practical AI systems that work for you.",
         "schema_type": "Person",
         "breadcrumb_group": "Company",
         "sections": [
             {
-                "title": "What Ola is building",
+                "title": "Why I am building NivdoX AI",
                 "body": (
-                    "Ola is building NivDoX AI and RunningAds as software systems for practical automation. "
-                    "RunningAds focuses on competitor ad research and the workflows marketers repeat when "
-                    "they need to understand what similar brands are running."
+                    "I want to build practical AI systems that can do useful work without requiring constant manual "
+                    "effort. NivdoX AI is the company behind that work: small, focused software systems that help with "
+                    "automation, research, and workflows people actually repeat."
                 ),
             },
             {
-                "title": "Why this page is intentionally plain",
+                "title": "My background",
                 "body": (
-                    "This page avoids invented credentials, inflated claims, fake press, and guru language. "
-                    "The goal is to make the people and company behind RunningAds easier to understand."
+                    "My education includes university studies in coaching and mentoring, and university studies in "
+                    "social pedagogy. I have worked with people, mentoring, communication, practical problem solving, "
+                    "and conflict handling. That background shapes how I think about tools: they should help people "
+                    "make clearer decisions, not add more noise."
                 ),
             },
             {
-                "title": "How that shapes RunningAds",
+                "title": "Why RunningAds exists",
                 "body": (
-                    "RunningAds is designed around practical research, not magic answers. It helps users find "
-                    "ads worth studying, then leaves the judgment, positioning, and strategy to the marketer."
+                    "RunningAds exists because competitor ad research can become repetitive very quickly. I wanted a "
+                    "tool that helps marketers find active ads worth reviewing, use duration as a research signal, and "
+                    "spend more time thinking about patterns instead of collecting examples manually."
+                ),
+            },
+            {
+                "title": "What I am not trying to be",
+                "body": (
+                    "I am not trying to build a fake guru brand, promise guaranteed ad performance, or make RunningAds "
+                    "look bigger than it is. Long-running ads can be useful research signals, but they are not magic "
+                    "answers and they do not prove profitability."
+                ),
+            },
+            {
+                "title": "A practical side note",
+                "body": (
+                    "RunningAds is being built alongside work and family life. That is part of why automation and low "
+                    "manual maintenance matter to me. I have also written the book Act and Achieve - Become Your Dream, "
+                    "which is simply part of my background in motivation, action, and personal development."
                 ),
             },
         ],
         "faqs": [
             {
                 "question": "Who founded RunningAds?",
-                "answer": "RunningAds is built by Ola Skodvin through NivDoX AI.",
+                "answer": "RunningAds is built by Ola Skodvin, founder of NivdoX AI, based in Norway.",
             },
             {
-                "question": "What is NivDoX AI?",
-                "answer": "NivDoX AI is the company and product studio behind RunningAds, focused on practical AI, automation, and useful software workflows.",
+                "question": "What is NivdoX AI?",
+                "answer": "NivdoX AI builds practical AI systems that work for you, with a focus on automation, research, and useful workflows.",
+            },
+            {
+                "question": "Why is Ola building RunningAds?",
+                "answer": "I am building RunningAds to reduce repetitive competitor ad research and make useful creative research easier to inspect.",
             },
             {
                 "question": "Does the founder page include verified customer or revenue claims?",
@@ -294,33 +325,37 @@ AUTHORITY_PAGES = {
             "Why RunningAds exists: to help marketers spend less time guessing which competitor ads matter and more time studying useful creative patterns."
         ),
         "eyebrow": "Why we built RunningAds",
-        "headline": "Competitor ad research should be less random",
+        "headline": "Competitor ad research should not feel like guessing",
         "summary": (
-            "Most marketers do not need more noise. They need a faster way to decide which competitor ads are worth studying. "
-            "RunningAds focuses on active ads that have stayed live longer because those ads may reveal useful patterns."
+            "Most marketers can find competitor ads. The harder part is deciding which examples deserve attention. "
+            "RunningAds was built to make the first research pass clearer by focusing on active ads, duration, and patterns worth reviewing."
         ),
+        "visual_pill": "Research problem",
+        "visual_brand": "Too many ads",
+        "visual_signal": "Clearer signals",
+        "visual_copy": "Duration is one way to prioritize what to inspect first, not a promise of performance.",
         "schema_type": "WebPage",
         "breadcrumb_group": "Company",
         "sections": [
             {
-                "title": "The problem",
+                "title": "The market problem",
                 "body": (
-                    "A marketer can spend a lot of time opening ads, checking dates, collecting screenshots, "
-                    "and still not know which examples deserve attention. RunningAds narrows the first pass."
+                    "Competitor ad research is often messy: many open tabs, repeated searches, screenshots, notes, and unclear priority. "
+                    "The work can feel productive while still leaving the marketer unsure which ads are worth discussing."
                 ),
             },
             {
-                "title": "The signal",
+                "title": "Why duration helps",
                 "body": (
-                    "An ad that stays active for days or weeks can be a better research starting point than a random ad. "
-                    "It may indicate that the advertiser sees enough value to keep it running, though it is not proof of profit."
+                    "Ad duration is not proof of profit, but it can be a useful research filter. If an ad stays active for days or weeks, "
+                    "it may be more worth studying than a random short-lived example."
                 ),
             },
             {
-                "title": "The principle",
+                "title": "Research, not copying",
                 "body": (
-                    "The goal is inspiration and research, not copying. RunningAds helps users study hooks, angles, "
-                    "offers, and presentation patterns so they can think more clearly about their own campaigns."
+                    "The goal is to understand hooks, angles, offers, landing-page promises, formats, and positioning patterns. "
+                    "RunningAds is meant to support original strategy, not encourage copying another brand's work."
                 ),
             },
         ],
@@ -334,7 +369,7 @@ AUTHORITY_PAGES = {
                 "answer": "No. The goal is to learn from patterns and use them as inspiration for original strategy and creative work.",
             },
             {
-                "question": "Are long-running ads always winning ads?",
+                "question": "Are long-running ads always successful ads?",
                 "answer": "No. Duration is a signal for research, not proof of performance or profitability.",
             },
         ],
@@ -349,11 +384,15 @@ AUTHORITY_PAGES = {
             "How paid social agencies can use RunningAds for competitor monitoring, onboarding research, creative inspiration, and client strategy work."
         ),
         "eyebrow": "For agencies",
-        "headline": "A faster research workflow for paid social agencies",
+        "headline": "Competitor ad research before the client meeting",
         "summary": (
-            "RunningAds helps agencies quickly find active competitor ads and long-running creative examples for client onboarding, "
-            "creative research, competitor monitoring, and strategic discussion."
+            "RunningAds helps paid social agencies prepare faster for client onboarding, creative reviews, strategy discussions, and recurring "
+            "competitor checks by collecting active ad examples in a focused workflow."
         ),
+        "visual_pill": "Agency workflow",
+        "visual_brand": "Before meetings",
+        "visual_signal": "Sharper prep",
+        "visual_copy": "Bring concrete competitor examples into onboarding, creative review, and strategy conversations.",
         "schema_type": "SoftwareApplication",
         "breadcrumb_group": "Use cases",
         "sections": [
@@ -406,9 +445,13 @@ AUTHORITY_PAGES = {
         "eyebrow": "For ecommerce marketers",
         "headline": "Research competitor ads before planning your next creative test",
         "summary": (
-            "RunningAds helps ecommerce and DTC marketers study active Meta ads from brands in their category. "
-            "It is useful for researching hooks, product messaging, offers, creative formats, and recurring angles."
+            "RunningAds helps ecommerce and DTC marketers study active Meta ads before briefing new creative. It is useful for reviewing hooks, "
+            "offers, product messaging, seasonality, category language, and recurring creative angles."
         ),
+        "visual_pill": "DTC workflow",
+        "visual_brand": "Creative testing",
+        "visual_signal": "Better briefs",
+        "visual_copy": "Use competitor patterns to inform your own tests before production starts.",
         "schema_type": "SoftwareApplication",
         "breadcrumb_group": "Use cases",
         "sections": [
@@ -8461,7 +8504,7 @@ def build_authority_structured_data(page, canonical_url: str):
         },
         "publisher": {
             "@type": "Organization",
-            "name": "NivDoX AI",
+            "name": "NivdoX AI",
             "url": absolute_url("/"),
         },
         "breadcrumb": {
@@ -8498,7 +8541,7 @@ def build_authority_structured_data(page, canonical_url: str):
         ),
         "publisher": {
             "@type": "Organization",
-            "name": "NivDoX AI",
+            "name": "NivdoX AI",
         },
     }
     if page.get("schema_type") == "Person":
@@ -8507,16 +8550,21 @@ def build_authority_structured_data(page, canonical_url: str):
             "@type": "Person",
             "@id": f"{canonical_url}#person",
             "name": "Ola Skodvin",
+            "jobTitle": "Founder of NivdoX AI",
+            "homeLocation": {
+                "@type": "Place",
+                "name": "Norway",
+            },
             "affiliation": {
                 "@type": "Organization",
-                "name": "NivDoX AI",
+                "name": "NivdoX AI",
             },
             "worksFor": {
                 "@type": "Organization",
-                "name": "NivDoX AI",
+                "name": "NivdoX AI",
             },
             "description": (
-                "Ola Skodvin is building NivDoX AI and RunningAds as practical AI and software systems "
+                "Ola Skodvin is building NivdoX AI and RunningAds as practical AI and software systems "
                 "focused on automation, marketing research, and useful workflows."
             ),
         }
@@ -8525,7 +8573,7 @@ def build_authority_structured_data(page, canonical_url: str):
             "@context": "https://schema.org",
             "@type": "Organization",
             "@id": f"{absolute_url('/')}#organization",
-            "name": "NivDoX AI",
+            "name": "NivdoX AI",
             "url": absolute_url("/"),
             "makesOffer": {
                 "@type": "Offer",

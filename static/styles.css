@@ -589,14 +589,35 @@ body {
 
 .authority-page .hero h1 {
     max-width: 900px;
+    font-size: clamp(40px, 5.2vw, 72px);
+    line-height: 1.02;
+    letter-spacing: -0.045em;
 }
 
 .authority-hero {
     margin-top: 30px;
 }
 
+.authority-founder .hero-grid {
+    grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+}
+
+.authority-founder .hero h1 {
+    max-width: 780px;
+    font-size: clamp(34px, 4.2vw, 58px);
+    line-height: 1.08;
+    letter-spacing: -0.035em;
+}
+
+.authority-founder .hero-subtext {
+    max-width: 820px;
+    font-size: clamp(17px, 1.7vw, 21px);
+}
+
 .authority-visual-card .visual-running {
     font-size: clamp(34px, 4vw, 56px);
+    line-height: 1.03;
+    letter-spacing: -0.04em;
 }
 
 .authority-section-grid {

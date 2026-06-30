@@ -23,7 +23,7 @@
 {% endblock %}
 
 {% block content %}
-<main class="page authority-page">
+<main class="page authority-page authority-{{ page.slug }}">
     <nav class="simple-grid" aria-label="Breadcrumb">
         <div class="panel seo-breadcrumb-panel">
             <a class="brand-link" href="{{ url_for('index') }}">Home</a>
@@ -50,11 +50,11 @@
 
             <div class="hero-right">
                 <div class="hero-visual-card authority-visual-card">
-                    <div class="visual-pill">Research workflow</div>
-                    <div class="visual-brand">RunningAds</div>
-                    <div class="visual-running">Long-running ads</div>
+                    <div class="visual-pill">{{ page.visual_pill }}</div>
+                    <div class="visual-brand">{{ page.visual_brand }}</div>
+                    <div class="visual-running">{{ page.visual_signal }}</div>
                     <div class="visual-copy">
-                        Study active Meta ads as research signals, not guaranteed outcomes.
+                        {{ page.visual_copy }}
                     </div>
                     <div class="visual-bars">
                         <div class="bar bar-1"></div>
