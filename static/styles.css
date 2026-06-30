@@ -722,6 +722,21 @@ body {
     align-items: center;
 }
 
+.inline-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+
+.large-textarea {
+    min-height: 220px;
+}
+
+.manual-check-form {
+    margin-top: 18px;
+}
+
 .search-form {
     margin-top: 28px;
 }

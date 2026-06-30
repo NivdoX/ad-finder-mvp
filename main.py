@@ -168,6 +168,7 @@ AI_VISIBILITY_PLATFORMS = (
     "ChatGPT",
     "Perplexity",
     "Gemini",
+    "Copilot",
     "Google AI Overview",
     "Google AI Mode",
     "YouTube Search",
@@ -177,6 +178,10 @@ AI_VISIBILITY_PLATFORMS = (
 AI_VISIBILITY_PRIORITIES = ("low", "medium", "high")
 AI_VISIBILITY_STATUSES = ("open", "planned", "done", "ignored")
 AI_VISIBILITY_ACTIONS = (
+    "Create external mention or improve comparison page",
+    "Improve comparison page or create topic page",
+    "Improve long-running ads page or create topic page",
+    "Improve internal links or add FAQ",
     "Create topic page",
     "Create comparison page",
     "Improve authority page",
@@ -187,6 +192,32 @@ AI_VISIBILITY_ACTIONS = (
     "Create Reddit post",
     "Improve internal links",
     "No action",
+)
+AI_VISIBILITY_KNOWN_TOOLS = (
+    ("Meta Ads Library", ("Meta Ads Library",)),
+    ("BigSpy", ("BigSpy",)),
+    ("Minea", ("Minea",)),
+    ("AdSpy", ("AdSpy",)),
+    ("PipiAds", ("PipiAds", "Pipi Ads")),
+    ("Foreplay", ("Foreplay",)),
+    ("MagicBrief", ("MagicBrief", "Magic Brief")),
+    ("Motion", ("Motion",)),
+    ("Adriel", ("Adriel",)),
+    ("AdSpyder", ("AdSpyder",)),
+    ("PowerAdSpy", ("PowerAdSpy", "Power AdSpy")),
+    ("Semrush", ("Semrush", "SEMrush")),
+    ("Similarweb", ("Similarweb", "Similar Web")),
+    ("Facebook Ads Library", ("Facebook Ads Library",)),
+    ("TikTok Creative Center", ("TikTok Creative Center", "Tiktok Creative Center")),
+)
+AI_VISIBILITY_HIGH_VALUE_TOPICS = (
+    "alternatives",
+    "competitor_research",
+    "duration",
+    "ad_spy",
+    "agencies",
+    "ecommerce",
+    "brand",
 )
 AI_VISIBILITY_DEFAULT_PROMPTS = (
     ("best tools to research competitor Facebook ads", "competitor_research"),
@@ -1187,6 +1218,9 @@ def ensure_schema():
                         priority TEXT DEFAULT 'medium',
                         status TEXT DEFAULT 'open',
                         notes TEXT,
+                        raw_answer TEXT,
+                        missing_topic TEXT,
+                        analysis_method TEXT,
                         created_at TIMESTAMPTZ DEFAULT NOW(),
                         updated_at TIMESTAMPTZ DEFAULT NOW()
                     );
@@ -1320,6 +1354,9 @@ def ensure_schema():
                 cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS priority TEXT DEFAULT 'medium';")
                 cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'open';")
                 cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS notes TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS raw_answer TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS missing_topic TEXT;")
+                cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS analysis_method TEXT;")
                 cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();")
                 cur.execute("ALTER TABLE ai_visibility_checks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();")
 
@@ -6922,6 +6959,217 @@ def parse_ai_visibility_terms(value: str):
     return [part.strip() for part in raw_parts if part.strip()]
 
 
+def compact_ai_visibility_text(value: str, limit: int = 5000) -> str:
+    value = re.sub(r"\s+", " ", (value or "").strip())
+    if len(value) <= limit:
+        return value
+    return value[:limit].rsplit(" ", 1)[0].strip()
+
+
+def extract_ai_visibility_urls(*values):
+    urls = []
+    seen = set()
+    for value in values:
+        for match in re.findall(r"https?://[^\s<>)\"']+", value or "", flags=re.IGNORECASE):
+            cleaned = match.rstrip(".,;:)]}'\"")
+            key = cleaned.lower()
+            if key and key not in seen:
+                seen.add(key)
+                urls.append(cleaned)
+    return urls
+
+
+def extract_ai_visibility_competitors(raw_answer: str):
+    detected = []
+    lower_answer = (raw_answer or "").lower()
+    for name, aliases in AI_VISIBILITY_KNOWN_TOOLS:
+        if name == "Meta Ads Library" and "Facebook Ads Library".lower() in lower_answer:
+            continue
+        for alias in aliases:
+            if re.search(rf"(?<![a-z0-9]){re.escape(alias.lower())}(?![a-z0-9])", lower_answer):
+                detected.append(name)
+                break
+    return detected
+
+
+def extract_ai_visibility_cited_pages(raw_answer: str, source_urls: str):
+    pages = []
+    seen = set()
+    for url in extract_ai_visibility_urls(raw_answer, source_urls):
+        parsed = urlparse(url)
+        if parsed.netloc.lower().endswith("getrunningads.com"):
+            page = parsed.path or "/"
+            if page not in seen:
+                seen.add(page)
+                pages.append(page)
+    return pages
+
+
+def infer_ai_visibility_action(topic: str, mentioned: bool, prominence: str) -> str:
+    topic = (topic or "").strip().lower()
+    prominence = (prominence or "").strip().lower()
+    if not mentioned and topic == "alternatives":
+        return "Create external mention or improve comparison page"
+    if not mentioned and topic == "competitor_research":
+        return "Improve comparison page or create topic page"
+    if not mentioned and topic == "duration":
+        return "Improve long-running ads page or create topic page"
+    if not mentioned:
+        return "Create topic page"
+    if "weak" in prominence:
+        return "Improve internal links or add FAQ"
+    return "No action"
+
+
+def infer_ai_visibility_priority(topic: str, mentioned: bool, prominence: str, competitors):
+    topic = (topic or "").strip().lower()
+    prominence = (prominence or "").strip().lower()
+    competitor_count = len(competitors or [])
+    if not mentioned and topic in AI_VISIBILITY_HIGH_VALUE_TOPICS:
+        return "high"
+    if "weak" in prominence or competitor_count >= 3:
+        return "medium"
+    if mentioned:
+        return "low"
+    return "medium"
+
+
+def deterministic_ai_visibility_analysis(prompt, platform: str, raw_answer: str, source_urls: str, notes: str):
+    text = raw_answer or ""
+    lower_text = text.lower()
+    mentioned = bool(re.search(r"\brunningads\b|getrunningads\.com", lower_text, flags=re.IGNORECASE))
+    competitors = extract_ai_visibility_competitors(text)
+    cited_pages = extract_ai_visibility_cited_pages(text, source_urls)
+    runningads_mentions = len(re.findall(r"\brunningads\b|getrunningads\.com", lower_text, flags=re.IGNORECASE))
+    first_runningads_index = lower_text.find("runningads")
+    if first_runningads_index < 0:
+        first_runningads_index = lower_text.find("getrunningads.com")
+
+    if not mentioned:
+        prominence = "Not mentioned"
+    elif runningads_mentions >= 2 or cited_pages or first_runningads_index <= 800:
+        prominence = "Clearly mentioned"
+    else:
+        prominence = "Weakly mentioned"
+
+    compact_answer = compact_ai_visibility_text(text, limit=700)
+    if compact_answer:
+        summary = compact_answer
+    else:
+        summary = "No answer text was provided."
+    if len(summary) > 360:
+        summary = summary[:360].rsplit(" ", 1)[0].strip() + "..."
+
+    action_needed = infer_ai_visibility_action(prompt["topic"], mentioned, prominence)
+    priority = infer_ai_visibility_priority(prompt["topic"], mentioned, prominence, competitors)
+
+    all_urls = extract_ai_visibility_urls(source_urls, text)
+    return {
+        "prompt_id": prompt["id"],
+        "platform": platform,
+        "runningads_mentioned": mentioned,
+        "runningads_prominence": prominence,
+        "competitors_mentioned": "\n".join(competitors),
+        "source_urls": "\n".join(all_urls) if all_urls else (source_urls or "").strip(),
+        "cited_pages": "\n".join(cited_pages),
+        "answer_summary": summary,
+        "action_needed": action_needed,
+        "priority": priority,
+        "status": "open" if action_needed != "No action" else "done",
+        "notes": (notes or "").strip(),
+        "raw_answer": text.strip(),
+        "missing_topic": prompt["topic"] if not mentioned else "",
+        "analysis_method": "deterministic",
+    }
+
+
+def parse_openai_visibility_json(value: str):
+    if not value:
+        return {}
+    cleaned = value.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        parsed = json.loads(cleaned)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def maybe_enrich_ai_visibility_analysis(prompt, platform: str, raw_answer: str, source_urls: str, fallback):
+    client = get_openai_client()
+    if not client or not raw_answer.strip():
+        return fallback
+
+    system_prompt = """
+You classify a pasted AI/search answer for the RunningAds admin.
+Do not browse, search, or call external tools. Use only the pasted answer.
+Return compact JSON only with keys:
+runningads_prominence, competitors_mentioned, source_urls, cited_pages,
+answer_summary, action_needed, priority.
+Priority must be low, medium, or high.
+Keep recommendations practical and avoid exaggerated claims.
+""".strip()
+    user_prompt = f"""
+Prompt topic: {prompt.get('topic') or ''}
+Prompt: {prompt.get('prompt') or ''}
+Platform: {platform}
+User-provided source URLs:
+{source_urls or '-'}
+
+Deterministic baseline:
+{json.dumps(fallback, ensure_ascii=True)}
+
+Pasted answer:
+{compact_ai_visibility_text(raw_answer, limit=3500)}
+""".strip()
+    try:
+        response = client.responses.create(
+            model=OPENAI_MODEL,
+            input=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_output_tokens=500,
+        )
+        parsed = parse_openai_visibility_json(response.output_text)
+    except Exception:
+        return fallback
+
+    enriched = dict(fallback)
+    if parsed.get("runningads_prominence"):
+        enriched["runningads_prominence"] = str(parsed["runningads_prominence"]).strip()[:240]
+    if isinstance(parsed.get("competitors_mentioned"), list):
+        enriched["competitors_mentioned"] = "\n".join(
+            str(item).strip() for item in parsed["competitors_mentioned"] if str(item).strip()
+        )
+    elif parsed.get("competitors_mentioned"):
+        enriched["competitors_mentioned"] = str(parsed["competitors_mentioned"]).strip()[:1000]
+    if isinstance(parsed.get("source_urls"), list):
+        enriched["source_urls"] = "\n".join(
+            str(item).strip() for item in parsed["source_urls"] if str(item).strip()
+        )
+    elif parsed.get("source_urls"):
+        enriched["source_urls"] = str(parsed["source_urls"]).strip()[:2000]
+    if isinstance(parsed.get("cited_pages"), list):
+        enriched["cited_pages"] = "\n".join(
+            str(item).strip() for item in parsed["cited_pages"] if str(item).strip()
+        )
+    elif parsed.get("cited_pages"):
+        enriched["cited_pages"] = str(parsed["cited_pages"]).strip()[:1000]
+    if parsed.get("answer_summary"):
+        enriched["answer_summary"] = str(parsed["answer_summary"]).strip()[:900]
+    if parsed.get("action_needed"):
+        enriched["action_needed"] = str(parsed["action_needed"]).strip()[:240]
+    priority = str(parsed.get("priority") or "").strip().lower()
+    if priority in AI_VISIBILITY_PRIORITIES:
+        enriched["priority"] = priority
+    enriched["status"] = "open" if enriched["action_needed"] != "No action" else "done"
+    enriched["analysis_method"] = "openai_assisted"
+    return enriched
+
+
 def ai_visibility_prompt_row_to_dict(row):
     return {
         "id": row[0],
@@ -6952,8 +7200,11 @@ def ai_visibility_check_row_to_dict(row):
         "priority": row[13] or "medium",
         "status": row[14] or "open",
         "notes": row[15] or "",
-        "created_at": row[16],
-        "updated_at": row[17],
+        "raw_answer": row[16] or "",
+        "missing_topic": row[17] or "",
+        "analysis_method": row[18] or "",
+        "created_at": row[19],
+        "updated_at": row[20],
     }
 
 
@@ -6993,10 +7244,11 @@ def save_ai_visibility_check(form):
                         prompt_id, platform, checked_at, runningads_mentioned,
                         runningads_prominence, competitors_mentioned, source_urls,
                         cited_pages, answer_summary, action_needed, priority,
-                        status, notes, created_at, updated_at
+                        status, notes, raw_answer, missing_topic, analysis_method,
+                        created_at, updated_at
                     )
                     VALUES (
-                        %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                         NOW(), NOW()
                     )
                     """,
@@ -7013,8 +7265,81 @@ def save_ai_visibility_check(form):
                         priority,
                         status,
                         (form.get("notes") or "").strip(),
+                        "",
+                        "",
+                        "manual",
                     ),
                 )
+    finally:
+        conn.close()
+
+
+def save_ai_visibility_quick_check(form):
+    prompt_id = int(form.get("prompt_id") or 0)
+    if prompt_id <= 0:
+        raise ValueError("Choose a prompt before analyzing a check.")
+
+    platform = normalize_ai_visibility_filter(form.get("platform"), AI_VISIBILITY_PLATFORMS, default="Other")
+    raw_answer = (form.get("raw_answer") or "").strip()
+    if not raw_answer:
+        raise ValueError("Paste the raw AI/search answer before analyzing.")
+
+    source_urls = (form.get("source_urls") or "").strip()
+    notes = (form.get("notes") or "").strip()
+
+    conn = get_db_connection()
+    try:
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, prompt_key, prompt, topic, is_active, created_at, updated_at
+                    FROM ai_visibility_prompts
+                    WHERE id = %s AND is_active = TRUE
+                    """,
+                    (prompt_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError("Prompt was not found.")
+                prompt = ai_visibility_prompt_row_to_dict(row)
+
+                analysis = deterministic_ai_visibility_analysis(prompt, platform, raw_answer, source_urls, notes)
+                analysis = maybe_enrich_ai_visibility_analysis(prompt, platform, raw_answer, source_urls, analysis)
+
+                cur.execute(
+                    """
+                    INSERT INTO ai_visibility_checks (
+                        prompt_id, platform, checked_at, runningads_mentioned,
+                        runningads_prominence, competitors_mentioned, source_urls,
+                        cited_pages, answer_summary, action_needed, priority,
+                        status, notes, raw_answer, missing_topic, analysis_method,
+                        created_at, updated_at
+                    )
+                    VALUES (
+                        %s, %s, NOW(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        NOW(), NOW()
+                    )
+                    """,
+                    (
+                        analysis["prompt_id"],
+                        analysis["platform"],
+                        analysis["runningads_mentioned"],
+                        analysis["runningads_prominence"],
+                        analysis["competitors_mentioned"],
+                        analysis["source_urls"],
+                        analysis["cited_pages"],
+                        analysis["answer_summary"],
+                        analysis["action_needed"],
+                        analysis["priority"],
+                        analysis["status"],
+                        analysis["notes"],
+                        analysis["raw_answer"],
+                        analysis["missing_topic"],
+                        analysis["analysis_method"],
+                    ),
+                )
+                return analysis
     finally:
         conn.close()
 
@@ -7058,7 +7383,8 @@ def get_ai_visibility_tracker_data(filters):
                            c.runningads_mentioned, c.runningads_prominence,
                            c.competitors_mentioned, c.source_urls, c.cited_pages,
                            c.answer_summary, c.action_needed, c.priority, c.status,
-                           c.notes, c.created_at, c.updated_at
+                           c.notes, c.raw_answer, c.missing_topic, c.analysis_method,
+                           c.created_at, c.updated_at
                     FROM ai_visibility_checks c
                     JOIN ai_visibility_prompts p ON p.id = c.prompt_id
                     {checks_where_sql}
@@ -7076,7 +7402,8 @@ def get_ai_visibility_tracker_data(filters):
                            c.runningads_mentioned, c.runningads_prominence,
                            c.competitors_mentioned, c.source_urls, c.cited_pages,
                            c.answer_summary, c.action_needed, c.priority, c.status,
-                           c.notes, c.created_at, c.updated_at
+                           c.notes, c.raw_answer, c.missing_topic, c.analysis_method,
+                           c.created_at, c.updated_at
                     FROM ai_visibility_checks c
                     JOIN ai_visibility_prompts p ON p.id = c.prompt_id
                     ORDER BY c.prompt_id, c.platform, c.checked_at DESC, c.id DESC
@@ -7105,6 +7432,14 @@ def get_ai_visibility_tracker_data(filters):
         prompt_rows.append({**prompt, "latest_check": latest})
 
     checked_prompt_ids = {check["prompt_id"] for check in latest_by_prompt_platform}
+    high_value_topic_rank = {topic: index for index, topic in enumerate(AI_VISIBILITY_HIGH_VALUE_TOPICS)}
+    next_prompts = sorted(
+        [prompt for prompt in prompt_rows if prompt["id"] not in checked_prompt_ids],
+        key=lambda item: (
+            high_value_topic_rank.get((item["topic"] or "").lower(), len(high_value_topic_rank)),
+            item["prompt"],
+        ),
+    )[:10]
     competitor_counts = {}
     missing_topic_counts = {}
     for check in checks:
@@ -7126,13 +7461,29 @@ def get_ai_visibility_tracker_data(filters):
         for check in checks
         if check["status"] in {"open", "planned"} and (check["action_needed"] or check["priority"] == "high")
     ][:25]
+    checks_needing_action = [
+        check
+        for check in checks
+        if check["status"] in {"open", "planned"} and check["action_needed"] and check["action_needed"] != "No action"
+    ]
+    runningads_not_mentioned_count = total_checks - mentioned_count
 
     summary = {
         "total_prompts": len(prompts),
         "total_checks": total_checks,
         "runningads_mentioned_count": mentioned_count,
+        "runningads_not_mentioned_count": runningads_not_mentioned_count,
         "runningads_mentioned_rate": (mentioned_count / total_checks * 100) if total_checks else 0,
         "prompts_never_checked": len([prompt for prompt in prompts if prompt["id"] not in checked_prompt_ids]),
+        "unchecked_high_value_prompts": len(
+            [
+                prompt
+                for prompt in prompts
+                if prompt["id"] not in checked_prompt_ids
+                and (prompt["topic"] or "").lower() in AI_VISIBILITY_HIGH_VALUE_TOPICS
+            ]
+        ),
+        "checks_needing_action": len(checks_needing_action),
         "high_priority_gaps": len(high_priority_gaps),
         "most_mentioned_competitors": sorted(
             [{"name": key, "count": value} for key, value in competitor_counts.items()],
@@ -7156,6 +7507,7 @@ def get_ai_visibility_tracker_data(filters):
     return {
         "summary": summary,
         "prompts": prompt_rows,
+        "next_prompts": next_prompts,
         "latest_checks": checks[:50],
         "action_queue": action_queue,
     }
@@ -7819,8 +8171,17 @@ Give a short weekly-style summary:
 def ai_visibility_admin():
     if request.method == "POST":
         try:
-            save_ai_visibility_check(request.form)
-            flash("AI visibility check saved.")
+            if request.form.get("form_type") == "quick":
+                analysis = save_ai_visibility_quick_check(request.form)
+                mentioned_label = "mentioned" if analysis["runningads_mentioned"] else "not mentioned"
+                flash(
+                    "Quick visibility check saved: "
+                    f"RunningAds {mentioned_label}, priority {analysis['priority']}, "
+                    f"action: {analysis['action_needed']}."
+                )
+            else:
+                save_ai_visibility_check(request.form)
+                flash("AI visibility check saved.")
         except Exception as exc:
             flash(f"AI visibility check was not saved: {str(exc)}")
         return redirect(url_for("ai_visibility_admin"))
