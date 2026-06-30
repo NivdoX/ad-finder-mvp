@@ -164,6 +164,295 @@ SEO_CANDIDATE_QUERY_ALIASES = {
 
 SEO_CACHE_DIAGNOSTIC_SLUGS = ("whoop", "native", "oura")
 
+AUTHORITY_PAGES = {
+    "about-runningads": {
+        "route": "/about-runningads",
+        "label": "About RunningAds",
+        "title": "About RunningAds - Competitor Meta Ads Research",
+        "meta_description": (
+            "Learn what RunningAds is, who it is for, and how it helps marketers research "
+            "long-running Facebook and Instagram ads without using Meta Ads Library manually."
+        ),
+        "eyebrow": "About RunningAds",
+        "headline": "A practical way to research long-running Meta ads",
+        "summary": (
+            "RunningAds is a SaaS tool for competitor Meta ads research. It helps marketers "
+            "find active Facebook and Instagram ads that have been running for days or weeks, "
+            "so they can study creative patterns, hooks, offers, and messaging with less manual work."
+        ),
+        "schema_type": "SoftwareApplication",
+        "breadcrumb_group": "Company",
+        "sections": [
+            {
+                "title": "What RunningAds does",
+                "body": (
+                    "RunningAds searches for active Meta ads and highlights ads that have stayed live "
+                    "longer. Long-running ads can be useful research signals because advertisers often "
+                    "pause weak ads faster than ads they still want to test or scale."
+                ),
+            },
+            {
+                "title": "Who it is for",
+                "body": (
+                    "The product is built for performance marketers, paid social teams, ecommerce "
+                    "operators, SaaS marketers, agencies, and founders who want faster competitor ad "
+                    "research without turning research into a manual spreadsheet project."
+                ),
+            },
+            {
+                "title": "How it differs from manual Meta Ads Library research",
+                "body": (
+                    "Meta Ads Library is useful, but it can require repeated searches and manual review. "
+                    "RunningAds focuses the workflow around ads that are still active and have been live "
+                    "long enough to be worth studying."
+                ),
+            },
+        ],
+        "faqs": [
+            {
+                "question": "What is RunningAds?",
+                "answer": "RunningAds is a SaaS tool for researching active Facebook, Instagram, and Meta ads from competitors and similar brands.",
+            },
+            {
+                "question": "What is RunningAds used for?",
+                "answer": "It is used to study competitor creatives, messaging, offers, hooks, and ad patterns from ads that have stayed active over time.",
+            },
+            {
+                "question": "Is RunningAds an alternative to Meta Ads Library?",
+                "answer": "RunningAds uses a more focused research workflow for marketers who want faster ad research, but it does not replace every feature of Meta Ads Library.",
+            },
+            {
+                "question": "Does RunningAds guarantee that an ad is profitable?",
+                "answer": "No. Long-running ads can be useful signals for research, but they do not prove profitability or guarantee results.",
+            },
+        ],
+        "related_slugs": ["why-runningads", "runningads-for-agencies", "runningads-for-ecommerce-marketers", "founder"],
+        "brand_slugs": ["nike", "gymshark", "manscaped"],
+    },
+    "founder": {
+        "route": "/founder",
+        "label": "Founder",
+        "title": "Founder - Ola Skodvin, NivDoX AI and RunningAds",
+        "meta_description": (
+            "Meet Ola Skodvin, the founder building NivDoX AI and RunningAds as practical AI and software systems for automation and marketing research workflows."
+        ),
+        "eyebrow": "Founder",
+        "headline": "Built by Ola Skodvin through NivDoX AI",
+        "summary": (
+            "RunningAds is built by Ola Skodvin as part of NivDoX AI, a practical AI and software effort "
+            "focused on useful automation, marketing research, and workflow systems. The approach is simple: "
+            "build tools that reduce repetitive research and make decisions easier to inspect."
+        ),
+        "schema_type": "Person",
+        "breadcrumb_group": "Company",
+        "sections": [
+            {
+                "title": "What Ola is building",
+                "body": (
+                    "Ola is building NivDoX AI and RunningAds as software systems for practical automation. "
+                    "RunningAds focuses on competitor ad research and the workflows marketers repeat when "
+                    "they need to understand what similar brands are running."
+                ),
+            },
+            {
+                "title": "Why this page is intentionally plain",
+                "body": (
+                    "This page avoids invented credentials, inflated claims, fake press, and guru language. "
+                    "The goal is to make the people and company behind RunningAds easier to understand."
+                ),
+            },
+            {
+                "title": "How that shapes RunningAds",
+                "body": (
+                    "RunningAds is designed around practical research, not magic answers. It helps users find "
+                    "ads worth studying, then leaves the judgment, positioning, and strategy to the marketer."
+                ),
+            },
+        ],
+        "faqs": [
+            {
+                "question": "Who founded RunningAds?",
+                "answer": "RunningAds is built by Ola Skodvin through NivDoX AI.",
+            },
+            {
+                "question": "What is NivDoX AI?",
+                "answer": "NivDoX AI is the company and product studio behind RunningAds, focused on practical AI, automation, and useful software workflows.",
+            },
+            {
+                "question": "Does the founder page include verified customer or revenue claims?",
+                "answer": "No. This page keeps the information factual and does not invent customers, revenue, awards, or press.",
+            },
+        ],
+        "related_slugs": ["about-runningads", "why-runningads", "runningads-for-agencies"],
+        "brand_slugs": ["hubspot", "shopify", "monday"],
+    },
+    "why-runningads": {
+        "route": "/why-runningads",
+        "label": "Why RunningAds",
+        "title": "Why We Built RunningAds - Competitor Ad Research",
+        "meta_description": (
+            "Why RunningAds exists: to help marketers spend less time guessing which competitor ads matter and more time studying useful creative patterns."
+        ),
+        "eyebrow": "Why we built RunningAds",
+        "headline": "Competitor ad research should be less random",
+        "summary": (
+            "Most marketers do not need more noise. They need a faster way to decide which competitor ads are worth studying. "
+            "RunningAds focuses on active ads that have stayed live longer because those ads may reveal useful patterns."
+        ),
+        "schema_type": "WebPage",
+        "breadcrumb_group": "Company",
+        "sections": [
+            {
+                "title": "The problem",
+                "body": (
+                    "A marketer can spend a lot of time opening ads, checking dates, collecting screenshots, "
+                    "and still not know which examples deserve attention. RunningAds narrows the first pass."
+                ),
+            },
+            {
+                "title": "The signal",
+                "body": (
+                    "An ad that stays active for days or weeks can be a better research starting point than a random ad. "
+                    "It may indicate that the advertiser sees enough value to keep it running, though it is not proof of profit."
+                ),
+            },
+            {
+                "title": "The principle",
+                "body": (
+                    "The goal is inspiration and research, not copying. RunningAds helps users study hooks, angles, "
+                    "offers, and presentation patterns so they can think more clearly about their own campaigns."
+                ),
+            },
+        ],
+        "faqs": [
+            {
+                "question": "Why are long-running ads useful for research?",
+                "answer": "They can indicate that an advertiser has kept testing or investing in the creative, which makes the ad more useful to study than a random short-lived ad.",
+            },
+            {
+                "question": "Should marketers copy ads found in RunningAds?",
+                "answer": "No. The goal is to learn from patterns and use them as inspiration for original strategy and creative work.",
+            },
+            {
+                "question": "Are long-running ads always winning ads?",
+                "answer": "No. Duration is a signal for research, not proof of performance or profitability.",
+            },
+        ],
+        "related_slugs": ["about-runningads", "runningads-for-ecommerce-marketers", "runningads-for-agencies"],
+        "brand_slugs": ["adidas", "vuori", "hellofresh"],
+    },
+    "runningads-for-agencies": {
+        "route": "/runningads-for-agencies",
+        "label": "For agencies",
+        "title": "RunningAds for Agencies - Competitor Ad Research Workflows",
+        "meta_description": (
+            "How paid social agencies can use RunningAds for competitor monitoring, onboarding research, creative inspiration, and client strategy work."
+        ),
+        "eyebrow": "For agencies",
+        "headline": "A faster research workflow for paid social agencies",
+        "summary": (
+            "RunningAds helps agencies quickly find active competitor ads and long-running creative examples for client onboarding, "
+            "creative research, competitor monitoring, and strategic discussion."
+        ),
+        "schema_type": "SoftwareApplication",
+        "breadcrumb_group": "Use cases",
+        "sections": [
+            {
+                "title": "Client onboarding research",
+                "body": (
+                    "Before a strategy call, agencies can use RunningAds to collect examples of active ads from the client, competitors, "
+                    "and adjacent brands. This creates a clearer starting point for questions and recommendations."
+                ),
+            },
+            {
+                "title": "Creative inspiration",
+                "body": (
+                    "Teams can compare hooks, formats, offers, and product angles from ads that have stayed live. "
+                    "The goal is to identify patterns, not to copy another advertiser's work."
+                ),
+            },
+            {
+                "title": "Competitor monitoring",
+                "body": (
+                    "RunningAds can support recurring checks of what competitors are keeping active, helping teams notice repeated offers, "
+                    "seasonal pushes, and messaging shifts."
+                ),
+            },
+        ],
+        "faqs": [
+            {
+                "question": "Can agencies use RunningAds?",
+                "answer": "Yes. Agencies can use it for competitor research, onboarding, creative inspiration, and paid social research workflows.",
+            },
+            {
+                "question": "Can RunningAds replace agency strategy?",
+                "answer": "No. It provides research inputs; strategy still depends on the client, market, offer, budget, and team judgment.",
+            },
+            {
+                "question": "Can agencies use RunningAds during client onboarding?",
+                "answer": "Yes. It can help gather examples before calls and make early research more concrete.",
+            },
+        ],
+        "related_slugs": ["about-runningads", "why-runningads", "runningads-for-ecommerce-marketers"],
+        "brand_slugs": ["hubspot", "clickfunnels", "shopify"],
+    },
+    "runningads-for-ecommerce-marketers": {
+        "route": "/runningads-for-ecommerce-marketers",
+        "label": "For ecommerce",
+        "title": "RunningAds for Ecommerce Marketers - DTC Ad Research",
+        "meta_description": (
+            "How ecommerce and DTC marketers can use RunningAds to research competitor Meta ads, creative patterns, offers, hooks, and product messaging."
+        ),
+        "eyebrow": "For ecommerce marketers",
+        "headline": "Research competitor ads before planning your next creative test",
+        "summary": (
+            "RunningAds helps ecommerce and DTC marketers study active Meta ads from brands in their category. "
+            "It is useful for researching hooks, product messaging, offers, creative formats, and recurring angles."
+        ),
+        "schema_type": "SoftwareApplication",
+        "breadcrumb_group": "Use cases",
+        "sections": [
+            {
+                "title": "Offer and hook research",
+                "body": (
+                    "Ecommerce teams can compare how similar brands present discounts, bundles, product benefits, social proof, "
+                    "seasonality, and first-purchase offers."
+                ),
+            },
+            {
+                "title": "Creative pattern research",
+                "body": (
+                    "Long-running ads can help marketers spot repeated creative structures such as founder stories, demos, testimonials, "
+                    "problem-solution hooks, product comparisons, and UGC-style angles."
+                ),
+            },
+            {
+                "title": "Useful before production",
+                "body": (
+                    "Before briefing designers, creators, or media buyers, marketers can use RunningAds to build a more informed view "
+                    "of what competitors are actively testing and keeping live."
+                ),
+            },
+        ],
+        "faqs": [
+            {
+                "question": "Can ecommerce brands use RunningAds?",
+                "answer": "Yes. Ecommerce and DTC marketers can use RunningAds to study active competitor ads, hooks, offers, and product messaging.",
+            },
+            {
+                "question": "Can RunningAds help with competitor Facebook ad research?",
+                "answer": "Yes. It helps marketers find and review active Meta ads, including Facebook and Instagram ads, from relevant brands.",
+            },
+            {
+                "question": "Does RunningAds tell ecommerce brands what to copy?",
+                "answer": "No. It is intended for research and inspiration, not copying another brand's creative or claims.",
+            },
+        ],
+        "related_slugs": ["about-runningads", "why-runningads", "runningads-for-agencies"],
+        "brand_slugs": ["gymshark", "manscaped", "ridge"],
+    },
+}
+
 PLAN_LIMITS = {
     "basic": {"monthly": 40, "daily": 5},
     "pro": {"monthly": 90, "daily": 15},
@@ -8104,6 +8393,200 @@ def terms():
     return render_template("terms.html", canonical_url=absolute_url("/terms"))
 
 
+def get_authority_page(slug: str):
+    page = AUTHORITY_PAGES.get(slug)
+    if not page:
+        return None
+    page = dict(page)
+    page["slug"] = slug
+    return page
+
+
+def get_authority_related_pages(page):
+    related_pages = []
+    for related_slug in page.get("related_slugs") or []:
+        related = get_authority_page(related_slug)
+        if related:
+            related_pages.append(related)
+    return related_pages
+
+
+def get_authority_brand_links(page):
+    brand_links = []
+    for brand_slug in page.get("brand_slugs") or []:
+        brand = get_brand_by_slug(brand_slug)
+        if brand:
+            brand_links.append(brand)
+    return brand_links
+
+
+def build_authority_structured_data(page, canonical_url: str):
+    breadcrumb_schema = {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "@id": f"{canonical_url}#breadcrumb",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "Home",
+                "item": absolute_url("/"),
+            },
+            {
+                "@type": "ListItem",
+                "position": 2,
+                "name": page["breadcrumb_group"],
+                "item": canonical_url,
+            },
+            {
+                "@type": "ListItem",
+                "position": 3,
+                "name": page["label"],
+                "item": canonical_url,
+            },
+        ],
+    }
+    webpage_schema = {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        "@id": f"{canonical_url}#webpage",
+        "name": page["title"],
+        "headline": page["headline"],
+        "description": page["meta_description"],
+        "url": canonical_url,
+        "isPartOf": {
+            "@type": "WebSite",
+            "name": "RunningAds",
+            "url": absolute_url("/"),
+        },
+        "publisher": {
+            "@type": "Organization",
+            "name": "NivDoX AI",
+            "url": absolute_url("/"),
+        },
+        "breadcrumb": {
+            "@id": f"{canonical_url}#breadcrumb",
+        },
+    }
+    faq_schema = {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "@id": f"{canonical_url}#faq",
+        "mainEntity": [
+            {
+                "@type": "Question",
+                "name": faq["question"],
+                "acceptedAnswer": {
+                    "@type": "Answer",
+                    "text": faq["answer"],
+                },
+            }
+            for faq in page.get("faqs", [])
+        ],
+    }
+    entity_schema = {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "@id": f"{absolute_url('/')}#software",
+        "name": "RunningAds",
+        "applicationCategory": "BusinessApplication",
+        "operatingSystem": "Web",
+        "url": absolute_url("/"),
+        "description": (
+            "RunningAds is a SaaS tool for competitor Meta ads research. It helps marketers find active "
+            "Facebook and Instagram ads that have been running for days or weeks."
+        ),
+        "publisher": {
+            "@type": "Organization",
+            "name": "NivDoX AI",
+        },
+    }
+    if page.get("schema_type") == "Person":
+        entity_schema = {
+            "@context": "https://schema.org",
+            "@type": "Person",
+            "@id": f"{canonical_url}#person",
+            "name": "Ola Skodvin",
+            "affiliation": {
+                "@type": "Organization",
+                "name": "NivDoX AI",
+            },
+            "worksFor": {
+                "@type": "Organization",
+                "name": "NivDoX AI",
+            },
+            "description": (
+                "Ola Skodvin is building NivDoX AI and RunningAds as practical AI and software systems "
+                "focused on automation, marketing research, and useful workflows."
+            ),
+        }
+    elif page.get("schema_type") == "WebPage":
+        entity_schema = {
+            "@context": "https://schema.org",
+            "@type": "Organization",
+            "@id": f"{absolute_url('/')}#organization",
+            "name": "NivDoX AI",
+            "url": absolute_url("/"),
+            "makesOffer": {
+                "@type": "Offer",
+                "itemOffered": {
+                    "@type": "SoftwareApplication",
+                    "name": "RunningAds",
+                    "applicationCategory": "BusinessApplication",
+                },
+            },
+        }
+
+    return [
+        json.dumps(webpage_schema),
+        json.dumps(breadcrumb_schema),
+        json.dumps(faq_schema),
+        json.dumps(entity_schema),
+    ]
+
+
+def render_authority_page(slug: str):
+    page = get_authority_page(slug)
+    if not page:
+        abort(404)
+
+    canonical_url = absolute_url(page["route"])
+    return render_template(
+        "authority_page.html",
+        page=page,
+        related_pages=get_authority_related_pages(page),
+        brand_links=get_authority_brand_links(page),
+        canonical_url=canonical_url,
+        structured_data_json=build_authority_structured_data(page, canonical_url),
+        seo_public_page=True,
+    )
+
+
+@app.route("/about-runningads")
+def about_runningads():
+    return render_authority_page("about-runningads")
+
+
+@app.route("/founder")
+def founder():
+    return render_authority_page("founder")
+
+
+@app.route("/why-runningads")
+def why_runningads():
+    return render_authority_page("why-runningads")
+
+
+@app.route("/runningads-for-agencies")
+def runningads_for_agencies():
+    return render_authority_page("runningads-for-agencies")
+
+
+@app.route("/runningads-for-ecommerce-marketers")
+def runningads_for_ecommerce_marketers():
+    return render_authority_page("runningads-for-ecommerce-marketers")
+
+
 def build_brand_structured_data(brand, canonical_url: str):
     category_name = (brand.get("category") or "Brand research").strip()
     breadcrumb_schema = {
@@ -8249,6 +8732,15 @@ def sitemap_xml():
             "changefreq": "yearly",
         },
     ]
+
+    for page in AUTHORITY_PAGES.values():
+        pages.append(
+            {
+                "loc": absolute_url(page["route"]),
+                "priority": "0.6",
+                "changefreq": "monthly",
+            }
+        )
 
     for brand in get_published_seo_brands():
         pages.append(

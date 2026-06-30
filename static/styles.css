@@ -587,6 +587,62 @@ body {
     box-shadow: none;
 }
 
+.authority-page .hero h1 {
+    max-width: 900px;
+}
+
+.authority-hero {
+    margin-top: 30px;
+}
+
+.authority-visual-card .visual-running {
+    font-size: clamp(34px, 4vw, 56px);
+}
+
+.authority-section-grid {
+    margin-top: 32px;
+}
+
+.authority-section-grid .panel p {
+    font-size: 16px;
+    line-height: 1.65;
+    font-weight: 600;
+}
+
+.authority-link-grid {
+    margin-top: 18px;
+}
+
+.authority-brand-grid {
+    margin-top: 18px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.authority-faq-list {
+    display: grid;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.authority-faq {
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    background: rgba(15, 23, 42, 0.56);
+    padding: 16px 18px;
+}
+
+.authority-faq summary {
+    cursor: pointer;
+    color: #f8fafc;
+    font-size: 17px;
+    font-weight: 900;
+}
+
+.authority-faq p {
+    margin: 12px 0 0;
+    color: var(--muted);
+}
+
 .search-form {
     margin-top: 28px;
 }
@@ -1082,6 +1138,10 @@ body {
 
     .duration-flow,
     .duration-points {
+        grid-template-columns: 1fr;
+    }
+
+    .authority-brand-grid {
         grid-template-columns: 1fr;
     }
 
