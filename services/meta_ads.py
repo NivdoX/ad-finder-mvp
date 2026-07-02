@@ -303,6 +303,8 @@ class MetaAdsService:
             "activeStatus": "active",
             "maxResults": max_results,
             "enrichAds": True,
+            "analyzeAds": False,
+            "transcribeVideos": False,
         }
 
         try:
