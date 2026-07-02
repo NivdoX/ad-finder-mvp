@@ -6700,15 +6700,37 @@ def get_missing_snapshot_image_refresh_targets(limit: int = SEO_STALE_CACHE_REFR
     targets = []
 
     for brand in published_brands:
-        snapshot = snapshots_by_slug.get(brand["slug"], {})
-        cached = cache_by_slug.get(brand["slug"], {})
-        page_state = select_seo_brand_saved_data(cached, snapshot)
-        snapshot_ad_count = int(snapshot.get("ad_count") or 0)
-        snapshot_image_count = int(snapshot.get("image_count") or 0)
-        snapshot_needs_images = bool(
-            snapshot_ad_count > 0 and snapshot_image_count < snapshot_ad_count
-        )
-        if not page_state["needs_images"] and not snapshot_needs_images:
+        slug = (brand.get("slug") or brand.get("brand_slug") or "").strip().lower()
+        if not slug:
+            targets.append(
+                {
+                    "brand": brand,
+                    "cache": {},
+                    "snapshot": {},
+                    "target_error": "missing brand slug while checking image refresh target",
+                }
+            )
+            continue
+        snapshot = snapshots_by_slug.get(slug, {}) or {}
+        cached = cache_by_slug.get(slug, {}) or {}
+        try:
+            page_state = select_seo_brand_saved_data(cached, snapshot)
+            snapshot_ad_count = int(snapshot.get("ad_count") or 0)
+            snapshot_image_count = int(snapshot.get("image_count") or 0)
+            snapshot_needs_images = bool(
+                snapshot_ad_count > 0 and snapshot_image_count < snapshot_ad_count
+            )
+            if not page_state["needs_images"] and not snapshot_needs_images:
+                continue
+        except Exception as exc:
+            targets.append(
+                {
+                    "brand": brand,
+                    "cache": cached,
+                    "snapshot": snapshot,
+                    "target_error": f"could not evaluate image refresh target: {str(exc)}",
+                }
+            )
             continue
         targets.append(
             {
@@ -6718,9 +6740,16 @@ def get_missing_snapshot_image_refresh_targets(limit: int = SEO_STALE_CACHE_REFR
             }
         )
 
+    def missing_image_target_sort_value(target):
+        captured_at = (target.get("snapshot") or {}).get("captured_at")
+        if isinstance(captured_at, datetime):
+            if captured_at.tzinfo is None:
+                captured_at = captured_at.replace(tzinfo=timezone.utc)
+            return captured_at.timestamp()
+        return 0
+
     targets.sort(
-        key=lambda target: target["snapshot"].get("captured_at")
-        or datetime.min.replace(tzinfo=timezone.utc)
+        key=missing_image_target_sort_value
     )
     return {
         "brands_checked": len(published_brands),
@@ -6839,11 +6868,12 @@ def preserve_missing_durable_seo_images():
 
 def refresh_seo_brand_cache_targets(target_data, run_type: str):
     safety = get_seo_refresh_safety_status()
-    targets = target_data["targets"][:SEO_REFRESH_MAX_BRANDS_PER_CLICK]
+    target_data = target_data or {}
+    targets = (target_data.get("targets") or [])[:SEO_REFRESH_MAX_BRANDS_PER_CLICK]
     summary = {
-        "brands_checked": target_data["brands_checked"],
-        "eligible_count": target_data["eligible_count"],
-        "estimated_brands_selected": target_data["eligible_count"],
+        "brands_checked": int(target_data.get("brands_checked") or 0),
+        "eligible_count": int(target_data.get("eligible_count") or 0),
+        "estimated_brands_selected": int(target_data.get("eligible_count") or 0),
         "max_brands_attempted": min(
             len(targets),
             SEO_REFRESH_MAX_BRANDS_PER_CLICK,
@@ -6856,7 +6886,7 @@ def refresh_seo_brand_cache_targets(target_data, run_type: str):
         "brands_no_previews": 0,
         "brands_failed": 0,
         "timeouts": 0,
-        "limit": target_data["limit"],
+        "limit": target_data.get("limit") or SEO_REFRESH_MAX_BRANDS_PER_CLICK,
         "errors": [],
         "apify_runs": 0,
         "daily_apify_run_limit": safety["daily_limit"],
@@ -6903,9 +6933,22 @@ def refresh_seo_brand_cache_targets(target_data, run_type: str):
     for target in targets[:summary["max_brands_attempted"]]:
         if remaining_apify_runs <= 0:
             break
-        brand = target["brand"]
-        cached = target["cache"]
-        existing_preview_count = int(cached.get("preview_count") or 0)
+        brand = (target or {}).get("brand") or {}
+        cached = (target or {}).get("cache") or {}
+        brand_name = brand.get("name") or brand.get("brand_name") or brand.get("slug") or "Unknown brand"
+        target_error = (target or {}).get("target_error")
+        if target_error:
+            summary["brands_failed"] += 1
+            summary["errors"].append(f"{brand_name}: {target_error}")
+            continue
+        if not brand.get("slug") or not brand.get("name") or not brand.get("search_query"):
+            summary["brands_failed"] += 1
+            summary["errors"].append(f"{brand_name}: missing required brand fields for SEO cache refresh")
+            continue
+        try:
+            existing_preview_count = int(cached.get("preview_count") or 0)
+        except (TypeError, ValueError):
+            existing_preview_count = 0
         allowed_attempts = min(SEO_CANDIDATE_MAX_QUERY_VARIANTS, remaining_apify_runs)
         summary["brands_attempted"] += 1
         try:
@@ -6936,21 +6979,26 @@ def refresh_seo_brand_cache_targets(target_data, run_type: str):
             apify_runs = max(1, int(getattr(exc, "apify_runs", 1) or 1))
             summary["apify_runs"] += apify_runs
             remaining_apify_runs = max(0, remaining_apify_runs - apify_runs)
-            summary["service_unavailable"] = True
-            summary["refresh_allowed"] = False
             if "timed out" in error_message.lower():
                 summary["timeouts"] += 1
-            summary["errors"].append(f"{brand['name']}: {error_message}")
-            break
+            summary["brands_failed"] += 1
+            summary["errors"].append(f"{brand_name}: {error_message}")
+            try:
+                save_seo_brand_cache_error(brand, error_message, country=SEO_CANDIDATE_TEST_COUNTRY)
+            except Exception as save_exc:
+                summary["errors"].append(f"{brand_name}: could not save refresh error: {str(save_exc)}")
+                print("SEO cache service error save failed:", str(save_exc))
+            continue
         except Exception as exc:
             error_message = str(exc)
             summary["apify_runs"] += allowed_attempts
             remaining_apify_runs = max(0, remaining_apify_runs - allowed_attempts)
             summary["brands_failed"] += 1
-            summary["errors"].append(f"{brand['name']}: {error_message}")
+            summary["errors"].append(f"{brand_name}: {error_message}")
             try:
                 save_seo_brand_cache_error(brand, error_message, country=SEO_CANDIDATE_TEST_COUNTRY)
             except Exception as save_exc:
+                summary["errors"].append(f"{brand_name}: could not save refresh error: {str(save_exc)}")
                 print("SEO stale cache error save failed:", str(save_exc))
 
     summary["remaining_apify_runs"] = max(
@@ -6969,18 +7017,22 @@ def refresh_seo_brand_cache_targets(target_data, run_type: str):
     else:
         run_status = "completed"
         run_error = ""
-    finish_seo_automation_run(
-        run_id,
-        run_status,
-        {
-            "tested": 0,
-            "failed": summary["brands_failed"],
-            "apify_runs": summary["apify_runs"],
-            "brands_attempted": summary["brands_attempted"],
-            "platform_limit_reached": summary["platform_limit_reached"],
-        },
-        run_error,
-    )
+    try:
+        finish_seo_automation_run(
+            run_id,
+            run_status,
+            {
+                "tested": 0,
+                "failed": summary["brands_failed"],
+                "apify_runs": summary["apify_runs"],
+                "brands_attempted": summary["brands_attempted"],
+                "platform_limit_reached": summary["platform_limit_reached"],
+            },
+            run_error,
+        )
+    except Exception as exc:
+        summary["errors"].append(f"Could not finish SEO refresh activity log: {str(exc)}")
+        print("SEO refresh activity finish failed:", str(exc))
     return summary
 
 
