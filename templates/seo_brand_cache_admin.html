@@ -40,7 +40,7 @@
             </p>
         </form>
         <form method="post" action="{{ url_for('refresh_missing_seo_snapshot_images') }}">
-            <button class="secondary-button" type="submit" {% if not refresh_safety.bulk_refresh_allowed %}disabled{% endif %}>Refresh brands missing images</button>
+            <button class="secondary-button" type="submit" {% if not refresh_safety.bulk_refresh_allowed %}disabled{% endif %}>Refresh brands missing real ad images</button>
             <p class="muted">
                 Eligible: {{ refresh_estimates.missing_images }} · Maximum this click: {{ refresh_safety.max_brands_this_click }} ·
                 Remaining calls: {{ refresh_safety.remaining_calls }} ·
@@ -137,9 +137,9 @@
         <p class="muted">Missing snapshots</p>
     </div>
     <div class="panel">
-        <div class="pill">No images</div>
+        <div class="pill">No real ad images</div>
         <h3>{{ cache_summary.missing_snapshot_images }}</h3>
-        <p class="muted">Pages needing images</p>
+        <p class="muted">Fallback visuals still render publicly</p>
     </div>
     <div class="panel">
         <div class="pill">SEO ready</div>
@@ -232,13 +232,16 @@
                             {% endif %}
                             {% if row.durable_images_ready %}
                                 <span class="pill cache-status qualified">Durable images ready</span>
+                            {% elif row.last_good_durable_image_count %}
+                                <span class="pill cache-status qualified">Last-good image used</span>
                             {% elif row.external_images_only %}
                                 <span class="pill cache-status expired">External images only</span>
                             {% elif row.needs_durable_images %}
                                 <span class="pill cache-status no_active_ads">Needs durable images</span>
                             {% endif %}
                             {% if row.needs_images %}
-                                <span class="pill cache-status no_active_ads">Needs images</span>
+                                <span class="pill cache-status no_active_ads">No real ad image</span>
+                                <span class="pill cache-status not_refreshed">Fallback visual used</span>
                             {% endif %}
                             {% if row.stale_but_usable %}
                                 <span class="pill cache-status expired">Stale but usable</span>
@@ -271,8 +274,18 @@
                                 -
                             {% endif %}
                         </td>
-                        <td>{{ row.external_image_count }} / {{ row.preview_count }}</td>
-                        <td>{{ row.durable_image_count }} / {{ row.preview_count }}</td>
+                        <td>
+                            {{ row.external_image_count }} / {{ row.preview_count }}
+                            {% if row.fallback_visual_count %}
+                                <div class="muted">{{ row.fallback_visual_count }} fallback visual{% if row.fallback_visual_count != 1 %}s{% endif %}</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {{ row.durable_image_count }} / {{ row.preview_count }}
+                            {% if row.last_good_durable_image_count %}
+                                <div class="muted">{{ row.last_good_durable_image_count }} last-good</div>
+                            {% endif %}
+                        </td>
                         <td>
                             {% if row.snapshot_captured_at %}
                                 {{ row.snapshot_captured_at }}

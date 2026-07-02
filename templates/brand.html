@@ -109,7 +109,7 @@
                                     onerror="this.closest('.seo-ad-media-shell').classList.add('image-unavailable'); this.setAttribute('aria-hidden', 'true'); this.nextElementSibling.removeAttribute('aria-hidden');"
                                 >
                                 <div class="seo-ad-placeholder seo-ad-placeholder-image-error" aria-hidden="true">
-                                    <div class="visual-pill">Image unavailable</div>
+                                    <div class="visual-pill">Brand visual</div>
                                     <div class="seo-ad-placeholder-brand">{{ ad.display_page_name }}</div>
                                     {% if ad.days_running is defined and ad.days_running is not none %}
                                         <div class="seo-ad-placeholder-running">
@@ -120,7 +120,7 @@
                             </div>
                         {% else %}
                             <div class="seo-ad-placeholder">
-                                <div class="visual-pill">Image unavailable</div>
+                                <div class="visual-pill">Brand visual</div>
                                 <div class="seo-ad-placeholder-brand">{{ ad.display_page_name }}</div>
                                 {% if ad.days_running is defined and ad.days_running is not none %}
                                     <div class="seo-ad-placeholder-running">
