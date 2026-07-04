@@ -1013,6 +1013,183 @@ COMPARISON_PAGES = {
         "authority_slugs": ["runningads-for-agencies", "runningads-for-ecommerce-marketers", "about-runningads"],
         "brand_slugs": ["hubspot", "shopify", "adidas"],
     },
+    "how-to-see-how-long-a-facebook-ad-has-been-running": {
+        "route": "/how-to-see-how-long-a-facebook-ad-has-been-running",
+        "label": "How to check Facebook ad duration",
+        "title": "How to See How Long a Facebook Ad Has Been Running | RunningAds",
+        "meta_description": (
+            "Learn how to see how long a Facebook ad has been running, why ad duration matters, and how RunningAds helps marketers research long-running Meta ads faster."
+        ),
+        "eyebrow": "Ad duration research",
+        "headline": "How to See How Long a Facebook Ad Has Been Running",
+        "summary": (
+            "Ad duration can be a useful signal when researching competitor Facebook and Meta ads. It does not prove an ad is profitable, but it can help marketers decide which active ads, hooks, offers, and creative angles are worth reviewing first."
+        ),
+        "visual_pill": "Duration check",
+        "visual_brand": "Facebook ads",
+        "visual_signal": "Start date",
+        "visual_copy": (
+            "Look for active status, start date, and running days. Then compare the creative and offer with other active ads from the same brand."
+        ),
+        "hero_ctas": [
+            {"label": "Search ads", "href": "/"},
+            {"label": "See sample results", "href": "/sample-results"},
+        ],
+        "sections": [
+            {
+                "title": "Quick answer",
+                "body": (
+                    "To see how long a Facebook ad has been running, open Meta Ads Library, search for a brand, open an active ad, and look for the start date or active status where available. Then compare several active ads instead of judging one example in isolation."
+                ),
+                "items": [
+                    "Open Meta Ads Library",
+                    "Search for the brand or advertiser",
+                    "Open active ads and note the start date",
+                    "Longer-running ads may be worth reviewing because weak ads are often stopped faster",
+                ],
+            },
+            {
+                "title": "Why ad duration matters",
+                "body": (
+                    "Running longer does not guarantee profitability. It can, however, suggest that an ad survived some level of budget, testing, or campaign-management decision. That makes duration useful for prioritizing what to inspect."
+                ),
+                "items": [
+                    "Spot hooks and offers competitors keep live",
+                    "Review messaging and creative angles",
+                    "Compare landing-page and campaign patterns",
+                ],
+            },
+            {
+                "title": "What counts as long-running",
+                "body": (
+                    "There is no universal threshold. A seven-day ad can be worth noticing, a thirty-day ad is a stronger signal, and a sixty to ninety day ad often deserves deeper review. The context still matters."
+                ),
+                "items": [
+                    "7+ days: worth noticing",
+                    "30+ days: stronger research signal",
+                    "60-90+ days: often worth deeper review",
+                    "Interpret duration by brand, budget, campaign type, and seasonality",
+                ],
+            },
+            {
+                "title": "Who uses this workflow",
+                "body": (
+                    "Ad duration research is useful when a team needs practical examples before planning creative, reviewing competitors, or preparing a client discussion."
+                ),
+                "items": [
+                    "Ecommerce brands researching category hooks",
+                    "Agencies preparing client strategy or onboarding",
+                    "Paid social managers comparing active campaigns",
+                    "Creative strategists building briefs",
+                    "Founders studying competitor positioning",
+                ],
+            },
+            {
+                "title": "Tools to use",
+                "body": (
+                    "Meta Ads Library is the free manual source for public ad lookup. RunningAds is the faster workflow when you want to search a brand, focus on active ads, and prioritize long-running Facebook ads without manually sorting every example."
+                ),
+                "items": [
+                    "Use Meta Ads Library for official manual lookup",
+                    "Use RunningAds to review active ads with duration in mind",
+                    "Use broader competitor research tools only when you need a wider ad intelligence workflow",
+                ],
+            },
+            {
+                "title": "How RunningAds helps",
+                "body": (
+                    "RunningAds is built around the practical question marketers ask after finding competitor ads: which active examples have stayed live long enough to inspect? It helps turn manual ad lookup into a faster research pass."
+                ),
+                "items": [
+                    "Search by brand or competitor",
+                    "Review active ads and duration signals where available",
+                    "Compare competitor creative faster",
+                ],
+            },
+        ],
+        "comparison_rows": [
+            ["Research task", "Manual Meta Ads Library workflow", "RunningAds workflow"],
+            [
+                "Find active ads",
+                "Search a brand and inspect active ads manually",
+                "Search a brand and focus on active Meta ads faster",
+            ],
+            [
+                "Check duration",
+                "Open ads and note start dates where visible",
+                "Review start date and running days where available",
+            ],
+            [
+                "Compare examples",
+                "Manually sort and compare ads across brands",
+                "Use duration as a shortcut for prioritizing ads to inspect",
+            ],
+            [
+                "Build creative notes",
+                "Copy observations into your own document",
+                "Move faster from competitor examples to hooks, offers, and angles",
+            ],
+        ],
+        "workflow_label": "Manual workflow",
+        "workflow_title": "How to check ad duration in Meta Ads Library",
+        "workflow_intro": (
+            "The manual workflow is useful, but it can become slow when you need to compare many brands or many active ads."
+        ),
+        "workflow_steps": [
+            "Go to Meta Ads Library.",
+            "Select a country and category if they are relevant to your search.",
+            "Search for the brand, advertiser, or Facebook page.",
+            "Filter or focus on active ads.",
+            "Open ad details where available.",
+            "Note the start date or active status.",
+            "Compare multiple active ads manually before drawing conclusions.",
+        ],
+        "insight_block": {
+            "pill": "Important nuance",
+            "title": "Long-running ads are signals, not proof",
+            "body": (
+                "A long-running ad may have survived testing decisions, but it can also stay live for reasons unrelated to direct profitability, such as brand awareness, retargeting, seasonality, or campaign structure. Treat duration as a prioritization signal, then review the creative, offer, copy, and landing page with human judgment."
+            ),
+        },
+        "extra_links": [
+            {"label": "Sample results", "href": "/sample-results"},
+            {"label": "Pricing", "href": "/pricing"},
+            {"label": "Tools to find long-running Facebook ads", "href": "/tools-to-find-long-running-facebook-ads"},
+            {"label": "RunningAds vs Meta Ads Library", "href": "/runningads-vs-meta-ads-library"},
+            {"label": "Meta Ads Library alternatives", "href": "/best-meta-ads-library-alternatives"},
+            {"label": "Facebook ads competitor analysis tools", "href": "/facebook-ads-competitor-analysis-tools"},
+            {"label": "RunningAds for agencies", "href": "/runningads-for-agencies"},
+            {"label": "RunningAds for ecommerce marketers", "href": "/runningads-for-ecommerce-marketers"},
+        ],
+        "faqs": [
+            {
+                "question": "Can you see how long a Facebook ad has been running?",
+                "answer": "Often, yes. In Meta Ads Library, active ads may show a start date or active status. RunningAds also shows start date and running days where that data is available.",
+            },
+            {
+                "question": "Does a long-running ad mean it is profitable?",
+                "answer": "No. A long-running ad is not proof of profitability. It is a useful research signal that can help decide which ads are worth studying first.",
+            },
+            {
+                "question": "How long should an ad run before it is worth studying?",
+                "answer": "A seven-day ad can be worth noticing, a thirty-day ad is a stronger signal, and a sixty to ninety day ad often deserves deeper review. The right threshold depends on the brand, budget, campaign type, and seasonality.",
+            },
+            {
+                "question": "Can I use Meta Ads Library for free?",
+                "answer": "Yes. Meta Ads Library is a free official source for public ad lookup. The tradeoff is that research can be manual when comparing many ads or brands.",
+            },
+            {
+                "question": "What is the fastest way to find long-running Meta ads?",
+                "answer": "The fastest workflow is to search a brand in RunningAds and review active ads with duration signals where available. Meta Ads Library remains useful for manual source checking.",
+            },
+            {
+                "question": "Why do agencies care about long-running ads?",
+                "answer": "Agencies use long-running ads to prepare competitor examples, creative references, offer observations, and strategy discussion points. Duration helps them prioritize what to review.",
+            },
+        ],
+        "authority_slugs": ["runningads-for-agencies", "runningads-for-ecommerce-marketers", "about-runningads"],
+        "brand_slugs": ["nike", "gymshark", "manscaped"],
+    },
     "tools-to-find-long-running-facebook-ads": {
         "route": "/tools-to-find-long-running-facebook-ads",
         "label": "Long-running Facebook ads tools",
@@ -10623,6 +10800,11 @@ def best_competitor_meta_ads_research_tools():
 @app.route("/facebook-ads-competitor-analysis-tools")
 def facebook_ads_competitor_analysis_tools():
     return render_comparison_page("facebook-ads-competitor-analysis-tools")
+
+
+@app.route("/how-to-see-how-long-a-facebook-ad-has-been-running")
+def how_to_see_how_long_a_facebook_ad_has_been_running():
+    return render_comparison_page("how-to-see-how-long-a-facebook-ad-has-been-running")
 
 
 @app.route("/tools-to-find-long-running-facebook-ads")
