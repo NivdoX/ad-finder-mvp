@@ -54,6 +54,11 @@ from seo_candidate_seeds import (
     get_seed_brands_for_categories,
     get_seed_categories,
 )
+from internal_outcomes import (
+    ensure_outcome_schema,
+    record_verified_basic_payment,
+    register_internal_outcome_routes,
+)
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "").strip()
@@ -1299,6 +1304,7 @@ def ensure_schema():
     try:
         with conn:
             with conn.cursor() as cur:
+                ensure_outcome_schema(cur)
                 cur.execute(
                     """
                     CREATE TABLE IF NOT EXISTS users (
@@ -10333,6 +10339,15 @@ def stripe_webhook():
     event_type = raw_event["type"]
     data = raw_event["data"]["object"]
 
+    outcome_conn = get_db_connection()
+    try:
+        with outcome_conn:
+            with outcome_conn.cursor() as outcome_cur:
+                ensure_outcome_schema(outcome_cur)
+                record_verified_basic_payment(outcome_cur, raw_event)
+    finally:
+        outcome_conn.close()
+
     if event_type == "checkout.session.completed":
         email = (
             data.get("customer_email")
@@ -10434,6 +10449,7 @@ def stripe_webhook():
     return jsonify({"received": True}), 200
 
 
+register_internal_outcome_routes(app, get_db_connection)
 ensure_schema()
 @app.route("/privacy")
 def privacy():
