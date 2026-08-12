@@ -28,9 +28,13 @@ def ensure_outcome_schema(cur) -> None:
             stripe_subscription_id TEXT,
             source_event_type TEXT NOT NULL,
             evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
+            acquisition_token TEXT,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
         """
+    )
+    cur.execute(
+        "ALTER TABLE runningads_commercial_outcomes ADD COLUMN IF NOT EXISTS acquisition_token TEXT"
     )
     cur.execute(
         """
@@ -69,13 +73,16 @@ def record_verified_basic_payment(cur, raw_event: dict) -> bool:
         "payment_status": paid_state,
         "source": "RunningAds Stripe webhook",
     }
+    acquisition_token = str((data.get("metadata") or {}).get("acquisition_token") or "").strip()
+    if acquisition_token:
+        evidence["acquisition_token"] = acquisition_token
     cur.execute(
         """
         INSERT INTO runningads_commercial_outcomes (
             event_id, customer_email, plan, paid_state, event_timestamp,
-            stripe_customer_id, stripe_subscription_id, source_event_type, evidence
+            stripe_customer_id, stripe_subscription_id, source_event_type, evidence, acquisition_token
         )
-        VALUES (%s, %s, 'basic', 'paid', %s, %s, %s, %s, %s::jsonb)
+        VALUES (%s, %s, 'basic', 'paid', %s, %s, %s, %s, %s::jsonb, %s)
         ON CONFLICT (event_id) DO NOTHING
         """,
         (
@@ -86,6 +93,7 @@ def record_verified_basic_payment(cur, raw_event: dict) -> bool:
             data.get("subscription"),
             raw_event["type"],
             json.dumps(evidence, sort_keys=True),
+            acquisition_token or None,
         ),
     )
     return True
@@ -112,7 +120,7 @@ def register_internal_outcome_routes(app, get_db_connection) -> None:
                         """
                         SELECT sequence, event_id, customer_email, plan, paid_state,
                                event_timestamp, stripe_customer_id,
-                               stripe_subscription_id, source_event_type, evidence
+                               stripe_subscription_id, source_event_type, evidence, acquisition_token
                         FROM runningads_commercial_outcomes
                         WHERE sequence > %s
                         ORDER BY sequence ASC
@@ -183,6 +191,7 @@ def _outcome_contract(row):
         "customer_id": row[6] or "",
         "subscription_id": row[7] or "",
         "evidence": evidence,
+        "acquisition_token": row[10] or "",
         "provenance": {
             "service": "RunningAds",
             "source_event_type": row[8],

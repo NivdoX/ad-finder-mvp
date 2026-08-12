@@ -59,6 +59,7 @@ from internal_outcomes import (
     record_verified_basic_payment,
     register_internal_outcome_routes,
 )
+from acquisition_attribution import checkout_metadata, verify_acquisition_token
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "").strip()
@@ -8876,6 +8877,15 @@ def pricing():
     )
 
 
+@app.route("/a/<path:acquisition_token>")
+def acquisition_landing(acquisition_token):
+    verified = verify_acquisition_token(acquisition_token, os.getenv("NAEL_RUNNINGADS_SHARED_SECRET", ""))
+    if not verified:
+        return redirect(url_for("pricing"))
+    session["acquisition_token"] = acquisition_token
+    return redirect(url_for("pricing"))
+
+
 @app.route("/create-checkout/<plan>", methods=["POST"])
 @login_required
 def create_checkout(plan):
@@ -8906,11 +8916,12 @@ def create_checkout(plan):
             success_url=f"{APP_BASE_URL}/account?checkout=success",
             cancel_url=f"{APP_BASE_URL}/pricing?checkout=cancelled",
             automatic_tax={"enabled": True},
-            metadata={
-                "user_id": str(user["id"]),
-                "plan": plan,
-            },
+            metadata=checkout_metadata(
+                str(user["id"]), plan, str(session.get("acquisition_token") or ""),
+                os.getenv("NAEL_RUNNINGADS_SHARED_SECRET", ""),
+            ),
         )
+        session.pop("acquisition_token", None)
         return redirect(checkout_session.url, code=303)
 
     except Exception as exc:

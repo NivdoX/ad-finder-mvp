@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import base64
+import json
 import unittest
 from datetime import datetime, timezone
 from unittest.mock import patch
@@ -10,6 +12,7 @@ from unittest.mock import patch
 from flask import Flask
 
 from internal_outcomes import record_verified_basic_payment, register_internal_outcome_routes
+from acquisition_attribution import checkout_metadata, verify_acquisition_token
 
 
 class RecordingCursor:
@@ -75,6 +78,7 @@ class FakeDatabase:
             datetime(2026, 8, 11, 10, tzinfo=timezone.utc), "cus_1", "sub_1",
             "checkout.session.completed",
             {"stripe_signature_verified": True, "payment_status": "paid"},
+            "",
         )]
 
     def connect(self):
@@ -96,7 +100,7 @@ class RunningAdsOutcomeTests(unittest.TestCase):
         insert = next(item for item in cursor.statements if item[0].startswith("INSERT INTO runningads_commercial_outcomes"))
         self.assertEqual(insert[1][0], "evt_1")
         self.assertEqual(insert[1][1], "buyer@example.com")
-        self.assertIn('"stripe_signature_verified": true', insert[1][-1])
+        self.assertIn('"stripe_signature_verified": true', insert[1][-2])
         for plan, state in (("pro", "paid"), ("basic", "unpaid")):
             rejected = {**event, "id": f"evt-{plan}-{state}", "data": {"object": {**event["data"]["object"], "payment_status": state, "metadata": {"plan": plan}}}}
             self.assertFalse(record_verified_basic_payment(cursor, rejected))
@@ -145,6 +149,23 @@ class RunningAdsOutcomeTests(unittest.TestCase):
             valid = self._headers(path, "replay")
             self.assertEqual(client.get(path, headers=valid).status_code, 200)
             self.assertEqual(client.get(path, headers=valid).status_code, 409)
+
+    def test_signed_acquisition_token_is_pii_free_tamper_resistant_and_exported(self):
+        payload = {"jti": "acq_opaque", "exp": 1999999999}
+        encoded = base64.urlsafe_b64encode(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).decode().rstrip("=")
+        token = encoded + "." + hmac.new(b"shared", encoded.encode(), hashlib.sha256).hexdigest()
+        self.assertEqual(verify_acquisition_token(token, "shared")["token_id"], "acq_opaque")
+        self.assertIsNone(verify_acquisition_token(token + "x", "shared"))
+        self.assertEqual(checkout_metadata("user", "basic", token, "shared")["acquisition_token"], token)
+        self.assertNotIn("acquisition_token", checkout_metadata("user", "basic", token + "x", "shared"))
+        database = FakeDatabase()
+        cursor = RecordingCursor(database)
+        event = {"id": "evt_token", "type": "checkout.session.completed", "created": 1786442400,
+                 "data": {"object": {"payment_status": "paid", "customer_email": "buyer@example.com",
+                 "customer": "cus", "subscription": "sub", "metadata": {"plan": "basic", "acquisition_token": token}}}}
+        self.assertTrue(record_verified_basic_payment(cursor, event))
+        insert = next(item for item in cursor.statements if item[0].startswith("INSERT INTO runningads_commercial_outcomes"))
+        self.assertEqual(insert[1][-1], token)
 
 
 if __name__ == "__main__":
