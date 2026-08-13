@@ -1051,13 +1051,13 @@ COMPARISON_PAGES = {
                     "Open Meta Ads Library",
                     "Search for the brand or advertiser",
                     "Open active ads and note the start date",
-                    "Longer-running ads may be worth reviewing because weak ads are often stopped faster",
+                    "Longer-running ads may be worth reviewing as a research-prioritization signal",
                 ],
             },
             {
                 "title": "Why ad duration matters",
                 "body": (
-                    "Running longer does not guarantee profitability. It can, however, suggest that an ad survived some level of budget, testing, or campaign-management decision. That makes duration useful for prioritizing what to inspect."
+                    "Running longer does not guarantee profitability or performance. Duration can be affected by budget, testing, campaign-management decisions, and other factors, so it is useful for prioritizing what to inspect rather than drawing conclusions."
                 ),
                 "items": [
                     "Spot hooks and offers competitors keep live",
@@ -1227,7 +1227,7 @@ COMPARISON_PAGES = {
             {
                 "title": "Why duration can matter",
                 "body": (
-                    "Advertisers often pause weak ads faster than ads they still want to test. That makes duration a practical research signal, especially when combined with creative, offer, copy, and category context."
+                    "Ads can remain active or leave the market for many reasons. That makes duration a practical research signal when combined with creative, offer, copy, and category context."
                 ),
                 "items": [
                     "Useful for prioritizing examples",
@@ -2409,14 +2409,14 @@ def can_user_search(user):
         return {
             "allowed": False,
             "reason": "monthly_limit",
-            "message": "You’ve reached your monthly limit. Upgrade to continue finding winning ads.",
+            "message": "You’ve reached your monthly limit. Upgrade to continue competitor-ad research.",
         }
 
     if counts["daily_count"] >= limits["daily"]:
         if user["plan"] == "pro":
             message = "You’ve reached today’s Pro limit. Your searches reset tomorrow."
         elif user["plan"] == "basic":
-            message = "You’ve reached your daily Basic limit. Upgrade to Pro to continue finding winning ads."
+            message = "You’ve reached your daily Basic limit. Upgrade to Pro to continue competitor-ad research."
         else:
             message = "You’ve reached your daily limit."
 
@@ -8548,7 +8548,7 @@ def index():
                 blocked = True
                 if access["reason"] == "daily_limit":
                     create_daily_cap_alert(user)
-                blocked_message = access.get("message") or "Upgrade to continue finding winning ads."
+                blocked_message = access.get("message") or "Upgrade to continue competitor-ad research."
                 return render_template(
                     "index.html",
                     brand=brand,

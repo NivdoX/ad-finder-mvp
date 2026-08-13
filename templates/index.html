@@ -69,18 +69,18 @@
                 </div>
 
                 <h1>
-                    Find ads your competitors
-                    <span class="headline-accent">can’t afford to turn off</span>
+                    Find long-running Meta ads
+                    <span class="headline-accent">worth studying</span>
                 </h1>
 
                 <p class="hero-subtext">
-                    If an ad keeps running, it’s probably profitable. Find winning ads in seconds.
+                    Prioritize active competitor ads by how long they’ve been running and find examples worth a closer look.
                 </p>
 <div class="info-card">
-  <strong>RunningAds focuses on proven ads.</strong>
+  <strong>RunningAds focuses on active, long-running ads.</strong>
   <p>
     We automatically filter out ads that have been running for less than 7 days.
-    This helps you discover campaigns that have survived long enough to indicate potential performance.
+    This helps you prioritize active examples for competitor research.
   </p>
 </div>
                 <form method="post" class="search-form" id="search-form" onsubmit="return handleSearchSubmit(event)">
@@ -104,11 +104,11 @@
 
                 <div class="search-loading-box" id="search-loading-box" style="display:none;">
                     <div class="loading-spinner"></div>
-                    <div class="loading-text">Searching for proven ads...</div>
+                    <div class="loading-text">Searching for long-running ads...</div>
                 </div>
 
                 <p class="hero-proof">
-                    Long running ads are usually the winners.
+                    Long-running ads can be useful research signals.
                 </p>
 
                 <div class="cta-row">
@@ -176,7 +176,7 @@
                     </div>
 
                     <div class="visual-copy">
-                        Ads running this long are usually profitable.
+                        Ads running this long may be worth a closer look.
                     </div>
 
                     <div class="visual-bars">
@@ -186,7 +186,7 @@
                     </div>
 
                     <div class="visual-foot">
-                        Used by performance marketers to find winning ads faster.
+                        Built for performance marketers doing competitor ad research.
                     </div>
                 </div>
             </div>
@@ -202,7 +202,7 @@
                 {% if current_user and (current_user.is_paid or current_user.full_access) %}
                     <p>Plan access unlocked</p>
                 {% else %}
-                    <p>You found active winning ads. Unlock the rest.</p>
+                    <p>You found active ads worth studying. Unlock the rest.</p>
                 {% endif %}
             </div>
 
@@ -214,7 +214,7 @@
                             {% if loop.index == 1 %}
                                 <div class="card-badge badge-winner">RUNNING LONGEST</div>
                             {% elif loop.index == 2 %}
-                                <div class="card-badge badge-active">Still running, spending money</div>
+                                <div class="card-badge badge-active">Still active</div>
                             {% else %}
                                 <div class="card-badge badge-default">Active ad</div>
                             {% endif %}
@@ -231,11 +231,11 @@
                         </div>
 
                         <div class="ad-money-line">
-                            Ads running this long are usually profitable.
+                            Ads running this long may be worth a closer look.
                         </div>
 
                         <div class="ad-sub-line">
-                            Competitors don’t keep losing ads running.
+                            Use duration as a research-prioritization signal.
                         </div>
 
                         {% if ad.media_url %}
@@ -281,7 +281,7 @@
                     </div>
 
                     <p class="paywall-sub">
-                        Find winning ads faster. No guesswork.
+                        Find long-running ads faster and decide what to study first.
                     </p>
                 </section>
             {% endif %}
@@ -309,8 +309,8 @@
     {% if searched and not error and not preview_results %}
         <section class="empty-state">
             <div class="empty-box">
-                <div class="empty-badge">No proven ads</div>
-                <h3>No proven ads found for this brand yet</h3>
+                <div class="empty-badge">No matching ads</div>
+                <h3>No long-running active ads found for this brand yet</h3>
                 <p>
                     We couldn't find long running active ads for this brand yet.
                 </p>
@@ -332,7 +332,7 @@
                         </div>
 
                         <p class="paywall-sub">
-                            Find winning ads faster. No guesswork.
+                            Find long-running ads faster and decide what to study first.
                         </p>
                     </section>
                 {% endif %}
@@ -353,8 +353,8 @@
 
         <div class="duration-flow" aria-label="Ad duration signal flow">
             <div class="duration-flow-step">Ad launches</div>
-            <div class="duration-flow-step muted-step">Poor ads get paused</div>
-            <div class="duration-flow-step success-step">Good ads stay active</div>
+            <div class="duration-flow-step muted-step">Some ads leave the market</div>
+            <div class="duration-flow-step success-step">Some ads stay active</div>
             <div class="duration-flow-step">RunningAds finds them</div>
             <div class="duration-flow-step">You learn from them</div>
         </div>
@@ -363,11 +363,11 @@
             <div class="duration-explainer">
                 <p>
                     Most advertisers focus on targeting, campaign settings and audience configuration.
-                    But modern ad platforms increasingly optimize toward the creatives that perform best.
+                    Creative choices are another useful part of competitor research.
                 </p>
                 <p>
-                    When advertisers continue spending money on the same creative for weeks or months,
-                    it is often a signal that the ad is generating results.
+                    When the same creative remains active for weeks or months, its duration can be a useful
+                    signal for deciding which examples to inspect first. It does not prove performance.
                 </p>
                 <p>
                     RunningAds helps marketers discover these ads and learn from the messages, hooks,
@@ -378,13 +378,13 @@
             <div class="duration-points">
                 <article class="duration-point">
                     <span class="duration-point-number">01</span>
-                    <h3>Poor ads usually get paused</h3>
-                    <p>Advertisers rarely continue spending money on ads that consistently fail.</p>
+                    <h3>Active ads can be useful research examples</h3>
+                    <p>Ads that remain active give marketers concrete examples to review in context.</p>
                 </article>
                 <article class="duration-point">
                     <span class="duration-point-number">02</span>
-                    <h3>Long running ads can indicate success</h3>
-                    <p>When an ad remains active for an extended period, it may suggest the advertiser sees value in continuing to run it.</p>
+                    <h3>Long-running ads can be useful signals</h3>
+                    <p>Duration can help prioritize which active ads are worth studying, without proving profitability or performance.</p>
                 </article>
                 <article class="duration-point">
                     <span class="duration-point-number">03</span>
@@ -399,7 +399,7 @@
                 <article class="duration-point">
                     <span class="duration-point-number">05</span>
                     <h3>Use inspiration, not copying</h3>
-                    <p>The goal is not to copy competitors. The goal is to get inspired by winning creative approaches and discover patterns worth learning from.</p>
+                    <p>The goal is not to copy competitors. The goal is to study creative approaches and discover patterns worth learning from.</p>
                 </article>
             </div>
         </div>
